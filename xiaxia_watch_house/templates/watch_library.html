@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}影片库 · 夏夏共影小屋{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <p class="eyebrow">OUR WATCH HOUSE</p>
+    <h1>我们的影片库</h1>
+    <p class="muted">保存时间线、观看状态，以及你们在电影里留下的痕迹。</p>
+  </div>
+  <button id="show-create" type="button">＋ 添加影片</button>
+</section>
+
+<section id="create-panel" class="card create-panel hidden">
+  <div class="section-heading">
+    <div><p class="eyebrow">NEW FILM</p><h2>添加一个共影入口</h2></div>
+    <button id="hide-create" class="ghost" type="button">收起</button>
+  </div>
+  <form id="create-film" class="form-grid">
+    <label>影片标题<input name="title" maxlength="300" required></label>
+    <label>来源
+      <select name="source_type">
+        <option value="local">本地视频（浏览器选择文件）</option>
+        <option value="youtube">YouTube</option>
+        <option value="bilibili">Bilibili</option>
+        <option value="iframe">其他可嵌入页面</option>
+        <option value="external">外部平台 / 静音同步</option>
+      </select>
+    </label>
+    <label class="wide" id="source-url-label">在线链接（本地视频可留空）<input name="source_url" type="url" placeholder="https://…"></label>
+    <label>时长（秒，可稍后由播放器写入）<input name="duration_seconds" type="number" min="0" step="0.001"></label>
+    <div class="form-actions"><button type="submit">创建影片记录</button></div>
+  </form>
+</section>
+
+{% if films %}
+<section class="film-grid" aria-label="影片列表">
+  {% for film in films %}
+  <article class="film-card card">
+    <a class="film-link" href="{{ url_for('web.watch_detail', film_id=film.film_id) }}">
+      <div class="poster-placeholder"><span>{{ film.title[:1] }}</span></div>
+      <div class="film-copy">
+        <div class="tag-row"><span class="tag">{{ film.source_type }}</span><span class="tag {{ 'ready' if film.subtitle_status == 'ready' else '' }}">字幕 {{ '已就绪' if film.subtitle_status == 'ready' else '待上传' }}</span></div>
+        <h2>{{ film.title }}</h2>
+        <p>你：{{ '%.0f'|format(film.user_progress.current_seconds) if film.user_progress else 0 }} 秒 · 夏夏：{{ '%.0f'|format(film.xiaxia_viewing_state.last_timestamp_seconds) if film.xiaxia_viewing_state else 0 }} 秒</p>
+        <div class="progress-track"><span style="width: {{ ((film.user_progress.current_seconds / film.duration_seconds * 100) if film.user_progress and film.duration_seconds else 0)|round(1) }}%"></span></div>
+      </div>
+    </a>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state card"><p class="eyebrow">EMPTY ROOM</p><h2>银幕还没有亮起来</h2><p>先添加一部本地影片或在线来源，再上传 SRT / VTT 字幕。</p></section>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='library.js') }}" defer></script>{% endblock %}

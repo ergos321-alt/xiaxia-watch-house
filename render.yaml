@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: xiaxia-watch-house
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "xiaxia_watch_house:create_app()" --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.5
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: WEB_PASSWORD_HASH
+        sync: false
+      - key: ACTION_BEARER_TOKEN
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: AUTO_CREATE_SCHEMA
+        value: "false"

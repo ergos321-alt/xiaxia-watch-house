@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}登录 · 夏夏共影小屋{% endblock %}
+{% block content %}
+<section class="login-card card">
+  <p class="eyebrow">PRIVATE SCREENING ROOM</p>
+  <h1>今晚看什么？</h1>
+  <p class="muted">这是一间只有你们两个人能进入的共影小屋。</p>
+  <form method="post" class="stacked-form">
+    <label for="password">私人访问密码</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    {% if error %}<p class="form-error">{{ error }}</p>{% endif %}
+    <button type="submit">进入小屋</button>
+  </form>
+</section>
+{% endblock %}

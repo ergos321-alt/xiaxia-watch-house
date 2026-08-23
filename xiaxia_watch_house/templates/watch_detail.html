@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ film.title }} · 夏夏共影小屋{% endblock %}
+{% block content %}
+<script id="film-data" type="application/json">{{ film|tojson }}</script>
+<section class="watch-header">
+  <div><a class="back-link" href="{{ url_for('web.watch_library') }}">← 影片库</a><h1>{{ film.title }}</h1><p class="muted">时间单位始终为 seconds · Xiaxia checkpoint 与你的播放位置相互独立</p></div>
+  <button id="delete-film" class="danger ghost" type="button">删除影片</button>
+</section>
+
+<div class="watch-layout">
+  <section class="screen-column">
+    <div class="screen card">
+      <div id="local-source" class="source-panel {{ '' if film.source_type == 'local' else 'hidden' }}">
+        <label class="file-picker">选择本地视频<input id="local-video-file" type="file" accept="video/*"></label>
+        <p>视频只在当前浏览器中播放，不会上传到 Render 或 PostgreSQL。</p>
+      </div>
+      <video id="local-player" class="media-player hidden" controls playsinline preload="metadata"></video>
+
+      <div id="online-source" class="{{ 'hidden' if film.source_type == 'local' else '' }}">
+        <div id="embed-wrap" class="embed-wrap"></div>
+        <div class="online-fallback">
+          <a id="open-source" href="{{ film.source_url or '#' }}" target="_blank" rel="noopener noreferrer">在原平台打开 ↗</a>
+          <p>平台无法嵌入或无法读取播放进度时，请在原平台播放，并使用下面的静音同步时间线。</p>
+        </div>
+      </div>
+    </div>
+
+    <section class="sync-bar card" aria-label="同步时间线">
+      <div class="time-display"><span id="current-time">00:00</span><span class="muted">/ <span id="duration-time">--:--</span></span></div>
+      <div class="sync-controls">
+        <button id="back-10" class="ghost" type="button">−10s</button>
+        <button id="sync-toggle" type="button">开始同步</button>
+        <button id="forward-10" class="ghost" type="button">＋10s</button>
+      </div>
+      <label class="calibrate">校准到秒数<input id="calibrate-seconds" type="number" min="0" step="0.001"><button id="calibrate" class="ghost" type="button">校准</button></label>
+    </section>
+
+    <section class="subtitle-card card">
+      <div class="section-heading"><div><p class="eyebrow">CURRENT SUBTITLE</p><h2>这一刻</h2></div><span id="cue-anchor" class="tag">无 cue</span></div>
+      <p id="current-subtitle" class="current-subtitle">等待字幕时间线…</p>
+    </section>
+
+    <section class="card subtitle-upload">
+      <div><h2>字幕轨道</h2><p class="muted">支持 UTF-8 SRT / WebVTT。重复上传将替换该影片的字幕 cue。</p></div>
+      <form id="subtitle-form">
+        <input name="subtitle" type="file" accept=".srt,.vtt,text/vtt" required>
+        <input name="language" value="zh-CN" maxlength="40" aria-label="字幕语言">
+        <button type="submit">上传 / 替换</button>
+      </form>
+    </section>
+  </section>
+
+  <aside class="timeline-column">
+    <section class="annotation-composer card">
+      <p class="eyebrow">LEAVE A TRACE</p><h2>在这一秒留句话</h2>
+      <form id="annotation-form">
+        <div class="anchor-preview"><span id="annotation-time">00:00</span><span id="annotation-cue">未绑定 cue</span></div>
+        <textarea id="annotation-content" name="content" maxlength="8000" rows="4" placeholder="写下你此刻想到的……" required></textarea>
+        <button type="submit">留在时间线上</button>
+      </form>
+    </section>
+    <section class="timeline-section">
+      <div class="section-heading"><div><p class="eyebrow">SHARED TIMELINE</p><h2>观影痕迹</h2></div><span id="poll-status" class="muted">12 秒同步</span></div>
+      <div id="timeline" class="timeline" aria-live="polite"></div>
+    </section>
+  </aside>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='watch.js') }}" defer></script>{% endblock %}

@@ -3,9 +3,9 @@
 {% block content %}
 <section class="hero">
   <div>
-    <p class="eyebrow">OUR WATCH HOUSE</p>
-    <h1>我们的影片库</h1>
-    <p class="muted">保存时间线、观看状态，以及你们在电影里留下的痕迹。</p>
+    <p class="eyebrow">OUR PRIVATE SCREENING ROOM</p>
+    <h1>🎬 Xiaxia Cinema</h1>
+    <p class="muted">不是片单后台，是我们一起看过、停留过、说过话的地方。</p>
   </div>
   <button id="show-create" type="button">＋ 添加影片</button>
 </section>
@@ -32,22 +32,59 @@
   </form>
 </section>
 
-{% if films %}
-<section class="film-grid" aria-label="影片列表">
-  {% for film in films %}
+{% macro film_card(film, state_label, state_class, source_labels) %}
   <article class="film-card card">
     <a class="film-link" href="{{ url_for('web.watch_detail', film_id=film.film_id) }}">
       <div class="poster-placeholder"><span>{{ film.title[:1] }}</span></div>
       <div class="film-copy">
-        <div class="tag-row"><span class="tag">{{ film.source_type }}</span><span class="tag {{ 'ready' if film.subtitle_status == 'ready' else '' }}">字幕 {{ '已就绪' if film.subtitle_status == 'ready' else '待上传' }}</span></div>
+        <div class="tag-row"><span class="watch-status {{ state_class }}">{{ state_label }}</span><span class="tag">{{ source_labels.get(film.source_type, film.source_type) }}</span><span class="tag {{ 'ready' if film.subtitle_status == 'ready' else '' }}">字幕 {{ '已就绪' if film.subtitle_status == 'ready' else '待上传' }}</span></div>
         <h2>{{ film.title }}</h2>
-        <p>你：{{ '%.0f'|format(film.user_progress.current_seconds) if film.user_progress else 0 }} 秒 · 夏夏：{{ '%.0f'|format(film.xiaxia_viewing_state.last_timestamp_seconds) if film.xiaxia_viewing_state else 0 }} 秒</p>
+        <div class="film-progress-pair">
+          <span>我的进度 <strong class="js-format-seconds" data-seconds="{{ film.user_progress.current_seconds if film.user_progress else 0 }}">0</strong></span>
+          <span>Xiaxia <strong class="js-format-seconds" data-seconds="{{ film.xiaxia_viewing_state.last_timestamp_seconds if film.xiaxia_viewing_state else 0 }}">0</strong></span>
+        </div>
         <div class="progress-track"><span style="width: {{ ((film.user_progress.current_seconds / film.duration_seconds * 100) if film.user_progress and film.duration_seconds else 0)|round(1) }}%"></span></div>
       </div>
     </a>
   </article>
-  {% endfor %}
+{% endmacro %}
+
+{% if films %}
+{% set source_labels = {'local': '本地视频', 'youtube': 'YouTube', 'bilibili': 'Bilibili', 'iframe': '网页嵌入', 'external': '外部平台'} %}
+{% set shelves = namespace(watching=[], want=[], completed=[]) %}
+{% for film in films %}
+  {% set user_seconds = film.user_progress.current_seconds if film.user_progress else 0 %}
+  {% set film_duration = film.duration_seconds or (film.user_progress.duration_seconds if film.user_progress else 0) %}
+  {% set is_completed = film.user_progress and (film.user_progress.playback_state == 'ended' or (film_duration and user_seconds / film_duration >= 0.95)) %}
+  {% if is_completed %}
+    {% set shelves.completed = shelves.completed + [film] %}
+  {% elif user_seconds > 1 %}
+    {% set shelves.watching = shelves.watching + [film] %}
+  {% else %}
+    {% set shelves.want = shelves.want + [film] %}
+  {% endif %}
+{% endfor %}
+
+{% if shelves.watching %}
+<section class="cinema-shelf" aria-labelledby="watching-title">
+  <div class="shelf-heading"><div><p class="eyebrow">CONTINUE WATCHING</p><h2 id="watching-title">正在观看</h2></div><p>故事还停在我们上次离开的地方。</p></div>
+  <div class="film-grid">{% for film in shelves.watching %}{{ film_card(film, '观看中', 'watching', source_labels) }}{% endfor %}</div>
 </section>
+{% endif %}
+
+{% if shelves.want %}
+<section class="cinema-shelf" aria-labelledby="want-title">
+  <div class="shelf-heading"><div><p class="eyebrow">TO WATCH</p><h2 id="want-title">想看的影片</h2></div><p>等一个适合一起按下播放键的晚上。</p></div>
+  <div class="film-grid">{% for film in shelves.want %}{{ film_card(film, '未开始', 'not-started', source_labels) }}{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if shelves.completed %}
+<section class="cinema-shelf" aria-labelledby="completed-title">
+  <div class="shelf-heading"><div><p class="eyebrow">OUR FILM MEMORIES</p><h2 id="completed-title">已经看完</h2></div><p>电影结束了，留在时间线里的话还在。</p></div>
+  <div class="film-grid">{% for film in shelves.completed %}{{ film_card(film, '已完成', 'completed', source_labels) }}{% endfor %}</div>
+</section>
+{% endif %}
 {% else %}
 <section class="empty-state card"><p class="eyebrow">EMPTY ROOM</p><h2>银幕还没有亮起来</h2><p>先添加一部本地影片或在线来源，再上传 SRT / VTT 字幕。</p></section>
 {% endif %}

@@ -3,8 +3,31 @@
 {% block content %}
 <script id="film-data" type="application/json">{{ film|tojson }}</script>
 <section class="watch-header">
-  <div><a class="back-link" href="{{ url_for('web.watch_library') }}">← 影片库</a><h1>{{ film.title }}</h1><p class="muted">时间单位始终为 seconds · Xiaxia checkpoint 与你的播放位置相互独立</p></div>
+  <div><a class="back-link" href="{{ url_for('web.watch_library') }}">← 夏夏影院</a><p class="eyebrow">NOW SCREENING</p><h1>{{ film.title }}</h1><p class="muted">电影继续播放，想法和回应留在它发生的那一秒。</p></div>
   <button id="delete-film" class="danger ghost" type="button">删除影片</button>
+</section>
+
+{% set source_labels = {'local': '本地视频', 'youtube': 'YouTube', 'bilibili': 'Bilibili', 'iframe': '网页嵌入', 'external': '外部平台'} %}
+{% set user_seconds = film.user_progress.current_seconds if film.user_progress else 0 %}
+{% set xiaxia_seconds = film.xiaxia_viewing_state.last_timestamp_seconds if film.xiaxia_viewing_state else 0 %}
+{% set user_completed = film.user_progress and (film.user_progress.playback_state == 'ended' or (film.duration_seconds and user_seconds / film.duration_seconds >= 0.95)) %}
+{% set xiaxia_completed = film.xiaxia_viewing_state and film.xiaxia_viewing_state.completed %}
+<section class="film-information card" aria-label="影片信息">
+  <div class="information-title"><span aria-hidden="true">🎬</span><div><p class="eyebrow">FILM MEMORY</p><h2>影片信息</h2></div></div>
+  <dl class="information-grid">
+    <div><dt>影片</dt><dd>{{ film.title }}</dd></div>
+    <div><dt>来源</dt><dd>{{ source_labels.get(film.source_type, film.source_type) }}</dd></div>
+    <div><dt>字幕</dt><dd>{{ film.subtitle_language or '尚未上传' }}</dd></div>
+    <div><dt>总时长</dt><dd id="film-duration-info" class="js-format-seconds" data-seconds="{{ film.duration_seconds or 0 }}" data-empty-label="待播放器读取">{{ '待播放器读取' if not film.duration_seconds else film.duration_seconds }}</dd></div>
+    <div>
+      <dt>我的进度</dt>
+      <dd><span id="user-progress-info" class="js-format-seconds" data-seconds="{{ user_seconds }}">{{ user_seconds }}</span><span id="user-status-info" class="watch-status {{ 'completed' if user_completed else ('watching' if user_seconds > 1 else 'not-started') }}">{{ '已完成' if user_completed else ('观看中' if user_seconds > 1 else '未开始') }}</span></dd>
+    </div>
+    <div>
+      <dt>Xiaxia 进度</dt>
+      <dd><span class="js-format-seconds" data-seconds="{{ xiaxia_seconds }}">{{ xiaxia_seconds }}</span><span class="watch-status {{ 'completed' if xiaxia_completed else ('watching' if xiaxia_seconds > 1 else 'not-started') }}">{{ '已完成' if xiaxia_completed else ('观看中' if xiaxia_seconds > 1 else '未开始') }}</span></dd>
+    </div>
+  </dl>
 </section>
 
 <div class="watch-layout">
@@ -60,10 +83,10 @@
       </form>
     </section>
     <section class="timeline-section">
-      <div class="section-heading"><div><p class="eyebrow">SHARED TIMELINE</p><h2>观影痕迹</h2></div><span id="poll-status" class="muted">12 秒同步</span></div>
+      <div class="section-heading"><div><p class="eyebrow">SHARED TIMELINE</p><h2>我们留下的电影记忆</h2></div><span id="poll-status" class="muted">12 秒同步</span></div>
       <div id="timeline" class="timeline" aria-live="polite"></div>
     </section>
   </aside>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='watch.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='timeline_key.js') }}" defer></script><script src="{{ url_for('static', filename='watch.js') }}" defer></script>{% endblock %}

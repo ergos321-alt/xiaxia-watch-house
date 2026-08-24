@@ -142,6 +142,26 @@ def test_polling_api_returns_new_xiaxia_entries_without_page_reload(
     assert [x["content"] for x in polled["entries"]] == ["appears by polling"]
 
 
+def test_timeline_returns_user_annotation_and_its_xiaxia_reply(
+    client, web_client, csrf, action_headers, make_film
+):
+    film = make_film("Reply Timeline")
+    annotation = create_annotation(web_client, csrf, film["film_id"], "I noticed this", 14)
+    reply_response = client.post(
+        f"/api/watch/annotations/{annotation['annotation_id']}/reply",
+        json={"content": "I noticed it too"},
+        headers=action_headers,
+    )
+    assert reply_response.status_code == 201
+    reply = reply_response.get_json()["reply"]
+
+    entries = web_client.get(f"/api/web/films/{film['film_id']}/timeline").get_json()["entries"]
+    assert [entry["content_type"] for entry in entries] == ["user_annotation", "xiaxia_reply"]
+    assert entries[0]["annotation_id"] == annotation["annotation_id"]
+    assert entries[1]["annotation_id"] == annotation["annotation_id"]
+    assert entries[1]["reply_id"] == reply["reply_id"]
+
+
 def test_film_deletion_cascades_all_owned_rows(
     app, client, web_client, csrf, action_headers, make_film, upload_srt, sample_srt
 ):

@@ -1,8 +1,8 @@
-# Xiaxia Watch House V1
+# Xiaxia Watch House V1.1
 
 私人双人 AI 共影 Web App。Watch House 保存影片时间轴、字幕证据、双方独立观看状态和观影痕迹；Custom GPT 中的林知夏通过 Action 按需读取有界上下文，并写回自己的 thought / reply / checkpoint。它不伪造后台持续自主观影，也不把 Render 当媒体仓库。
 
-## 1. 已实现的 V1 能力
+## 1. 已实现的稳定能力
 
 - `/watch` 私人影片库：来源、字幕状态、用户进度、Xiaxia 进度、最后活动。
 - `/watch/{film_id}` 共影页：本地视频浏览器播放、在线 iframe、不可嵌入时的外链 + 静音同步时间线。
@@ -16,6 +16,14 @@
 - 前端每 12 秒短轮询增量内容，按稳定 ID 去重；不刷新页面、不重载播放器、不清空正在输入的文字。
 - 播放进度每 12 秒节流保存，并在 pause、seek、pagehide、beforeunload 时尽力写回。
 - 多影片隔离；Web 删除影片需要输入完整标题二次确认，且不暴露给 Action。
+
+### V1.1 增量升级
+
+- 修复 Xiaxia Reply 因复用父 `annotation_id` 而被前端去重跳过的问题。前端现在分别使用 `annotation:{annotation_id}`、`thought:{thought_id}`、`reply:{reply_id}`。
+- 时间线明确展示“👤 我的痕迹”“💭 Xiaxia Thought”“💬 Xiaxia 回复”，Reply 保留父 annotation 关联但不再显示生硬的数据库 ID。
+- 影片详情增加来源、字幕语言、总时长、用户进度、Xiaxia 进度和“未开始/观看中/已完成”展示状态。
+- 影片库调整为 Xiaxia Cinema，并按“正在观看 / 想看的影片 / 已经看完”分区。
+- 本轮没有修改数据库表、持久化模型、Web API、Action API、OpenAPI 或字幕边界。
 
 ## 2. 项目目录
 
@@ -32,6 +40,7 @@ xiaxia-watch-house/
 │   ├── static/
 │   │   ├── library.js
 │   │   ├── style.css
+│   │   ├── timeline_key.js
 │   │   └── watch.js
 │   └── templates/
 │       ├── base.html
@@ -164,7 +173,7 @@ V1 不自动抓取平台字幕，也不声称能稳定读取 iframe 内的真实
 4. 在 Supabase 的 Database connection settings 获取 PostgreSQL 连接串。Render 通常优先使用 pooler URL，并保留 `sslmode=require`。
 5. 如果密码含 `@`、`:`、`/` 等字符，必须在连接 URL 中进行 percent-encoding。
 
-V1 当前尚未部署，因此只有 fresh-install `schema.sql`，没有制造 migration。应用默认 `AUTO_CREATE_SCHEMA=false`，不会在生产环境偷偷替你改表。
+项目继续使用 fresh-install `schema.sql`，没有制造不必要的 migration。V1.1 没有数据库变化，已部署的 V1 Supabase 无需再次执行 SQL。应用默认 `AUTO_CREATE_SCHEMA=false`，不会在生产环境偷偷改表。
 
 ## 11. GitHub 与 Render 部署
 
@@ -231,22 +240,21 @@ cp .env.example .env
 .venv/bin/python -m pytest -q
 ```
 
-结果：`27 passed, 0 failed`。
+结果：`30 passed, 0 failed`。
 
-测试覆盖：认证与 CSRF、Web/Action 身份边界、fresh schema 结构、multi-film isolation、annotation CRUD、Xiaxia thought/reply、双方独立 progress、SRT/VTT、seconds 与稳定 cue anchor、防剧透边界、时间窗口/chunk/continuation、长字幕不会单次返回完整内容、前端 polling 契约、进度节流、影片删除 cascade、OpenAPI/Flask 路由一致性、operationId 唯一、object properties、description 长度、Action request body 身份字段、前端秘密泄漏、Render 依赖版本。
+测试覆盖：认证与 CSRF、Web/Action 身份边界、fresh schema 结构、multi-film isolation、annotation CRUD、Xiaxia thought/reply、annotation + reply 同时出现在 timeline、三类前端去重 key 独立、双方独立 progress、SRT/VTT、seconds 与稳定 cue anchor、防剧透边界、时间窗口/chunk/continuation、长字幕不会单次返回完整内容、前端 polling 契约、进度节流、V1.1 影院分区与影片信息展示、影片删除 cascade、OpenAPI/Flask 路由一致性、operationId 唯一、object properties、description 长度、Action request body 身份字段、前端秘密泄漏、Render 依赖版本。
 
 Storage 测试不适用：本 V1 明确没有创建或使用 Storage bucket。
 
-## 14. 仍需用户本人完成
+## 14. V1.1 升级部署
 
-- 在真实 Supabase project 运行 `schema.sql`，确认 SQL Editor 无报错。
-- 创建私人 GitHub repository 并推送项目。
-- 在 Render 连接仓库，填写真实 `DATABASE_URL`、`WEB_PASSWORD_HASH`、`SESSION_SECRET`、`ACTION_BEARER_TOKEN`。
-- 部署后用真实域名替换 `openapi.yaml` 唯一的 `servers[0].url`。
-- 在 Custom GPT 中导入 Schema，并在 Action Authentication 填写真实 Bearer Token。
-- 用真实账号/地区/影片验证 YouTube、Bilibili 或其他平台是否允许 iframe；失败时使用外链静音同步与外挂字幕 fallback。
+对于已经通过验收的 V1：
 
-这些步骤需要你的项目、密钥和平台权限；仓库中没有假 key、假 Supabase URL 或假部署成功状态。
+1. 用本包覆盖仓库中的同名文件并提交。
+2. 推送 GitHub；已连接仓库的 Render 会按原配置自动重新部署。
+3. 部署完成后检查 `/health`、影片库、影片详情页和一条真实 Xiaxia Reply。
+
+无需重新执行 `schema.sql`，无需新增或修改环境变量，无需替换 `openapi.yaml` URL，也无需重新导入 Custom GPT Action。若是全新环境，才按第 10–12 节完成 Supabase、Render 和 Action 首次配置。
 
 ## 15. 必须进行的实机验收
 
@@ -260,6 +268,6 @@ Storage 测试不适用：本 V1 明确没有创建或使用 Storage bucket。
 - Render 免费实例冷启动后的登录、Action 超时与恢复体验。
 - 真实 Custom GPT Action 连续执行 `list → detail/state → context/transcript chunks → thought/reply/progress`。
 
-## 16. V1 边界
+## 16. V1.1 边界
 
-本项目未加入视觉截帧识别、短视频感官分析、直播陪看、Android 屏幕/系统音频捕获、常驻 Whisper/ASR、自动整片摘要、陪看停顿点、后台主动弹幕、万能平台下载器、Obsidian 沉淀或完整影片长期存储。这些都不属于 V1。
+本项目未加入视觉截帧识别、短视频感官分析、直播陪看、Android 屏幕/系统音频捕获、常驻 Whisper/ASR、自动整片摘要、陪看停顿点、后台主动弹幕、万能平台下载器、Obsidian 沉淀或完整影片长期存储。这些都不属于 V1.1。

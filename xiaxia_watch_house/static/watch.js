@@ -10,6 +10,9 @@
   const cueLabel = document.getElementById('cue-anchor');
   const annotationTime = document.getElementById('annotation-time');
   const annotationCue = document.getElementById('annotation-cue');
+  const durationInfo = document.getElementById('film-duration-info');
+  const userProgressInfo = document.getElementById('user-progress-info');
+  const userStatusInfo = document.getElementById('user-status-info');
   const timeline = document.getElementById('timeline');
   const toast = document.getElementById('toast');
   let virtualSeconds = film.user_progress?.current_seconds || 0;
@@ -36,6 +39,10 @@
       ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
       : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
   };
+  document.querySelectorAll('.js-format-seconds').forEach((element) => {
+    const value = Number(element.dataset.seconds || 0);
+    element.textContent = value > 0 || !element.dataset.emptyLabel ? formatTime(value) : element.dataset.emptyLabel;
+  });
   const activeSeconds = () => player && !player.classList.contains('hidden') ? player.currentTime : virtualSeconds;
   const activeState = () => player && !player.classList.contains('hidden')
     ? (player.ended ? 'ended' : (player.paused ? 'paused' : 'playing'))
@@ -86,6 +93,13 @@
     currentTimeLabel.textContent = formatTime(value);
     annotationTime.textContent = formatTime(value);
     durationLabel.textContent = durationSeconds ? formatTime(durationSeconds) : '--:--';
+    if (durationInfo) durationInfo.textContent = durationSeconds ? formatTime(durationSeconds) : durationInfo.dataset.emptyLabel;
+    if (userProgressInfo) userProgressInfo.textContent = formatTime(value);
+    if (userStatusInfo) {
+      const completed = activeState() === 'ended' || (durationSeconds && value / durationSeconds >= 0.95);
+      userStatusInfo.textContent = completed ? '已完成' : (value > 1 ? '观看中' : '未开始');
+      userStatusInfo.className = `watch-status ${completed ? 'completed' : (value > 1 ? 'watching' : 'not-started')}`;
+    }
     if (currentCue && value >= currentCue.start_seconds && value <= currentCue.end_seconds) {
       annotationCue.textContent = `cue ${currentCue.sequence_number}`;
     } else {
@@ -190,19 +204,30 @@
     document.getElementById('embed-wrap').textContent = '此来源未进行 iframe 嵌入，请在原平台播放并使用静音同步。';
   }
 
-  const entryId = (entry) => entry.annotation_id || entry.thought_id || entry.reply_id;
   const renderEntry = (entry) => {
-    const id = entryId(entry);
+    const id = window.XiaxiaTimelineEntryKey(entry);
     if (!id || rendered.has(id)) return;
     rendered.add(id);
     const card = document.createElement('article');
     card.className = `trace ${entry.content_type}`;
     card.dataset.entryId = id;
+    card.dataset.contentType = entry.content_type;
     const top = document.createElement('div');
     top.className = 'trace-top';
     const label = document.createElement('span');
     label.className = 'trace-actor';
-    label.textContent = entry.content_type === 'user_annotation' ? '你' : (entry.content_type === 'xiaxia_thought' ? '夏夏 · 想法' : '夏夏 · 回复');
+    const presentation = {
+      user_annotation: {icon: '👤', label: '我的痕迹'},
+      xiaxia_thought: {icon: '💭', label: 'Xiaxia Thought'},
+      xiaxia_reply: {icon: '💬', label: 'Xiaxia 回复'},
+    }[entry.content_type];
+    const icon = document.createElement('span');
+    icon.className = 'trace-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = presentation?.icon || '•';
+    const labelText = document.createElement('span');
+    labelText.textContent = presentation?.label || entry.content_type;
+    label.append(icon, labelText);
     const time = document.createElement('button');
     time.type = 'button';
     time.className = 'time-jump';
@@ -214,7 +239,9 @@
     card.append(top, content);
     if (entry.content_type === 'xiaxia_reply' && entry.annotation_id) {
       const parent = document.createElement('small');
-      parent.textContent = `回复 annotation ${entry.annotation_id.slice(0, 8)}`;
+      parent.className = 'reply-context';
+      parent.textContent = '回应我的一条观影痕迹';
+      parent.dataset.parentAnnotationId = entry.annotation_id;
       card.appendChild(parent);
     }
     timeline.appendChild(card);

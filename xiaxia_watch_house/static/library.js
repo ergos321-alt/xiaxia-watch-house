@@ -3,6 +3,18 @@
   const panel = document.getElementById('create-panel');
   const form = document.getElementById('create-film');
   const toast = document.getElementById('toast');
+  const formatTime = (value) => {
+    const total = Math.max(0, Math.floor(Number(value) || 0));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    return hours > 0
+      ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+  document.querySelectorAll('.js-format-seconds').forEach((element) => {
+    element.textContent = formatTime(element.dataset.seconds);
+  });
   const showToast = (message) => {
     toast.textContent = message;
     toast.classList.add('show');

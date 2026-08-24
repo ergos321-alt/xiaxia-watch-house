@@ -1,4 +1,6 @@
 from pathlib import Path
+import json
+import subprocess
 
 import yaml
 from sqlalchemy import inspect
@@ -90,11 +92,63 @@ def test_frontend_polling_and_progress_throttling_contract():
     assert "rendered.has(id)" in js
 
 
-def test_private_library_and_watch_pages_render(web_client, make_film):
-    film = make_film("Rendered Film")
+def test_reply_and_annotation_have_distinct_frontend_dedupe_keys():
+    helper = ROOT / "xiaxia_watch_house/static/timeline_key.js"
+    script = f"""
+const entryKey = require({json.dumps(str(helper))});
+const annotation = entryKey({{content_type:'user_annotation', annotation_id:'parent-1'}});
+const reply = entryKey({{content_type:'xiaxia_reply', annotation_id:'parent-1', reply_id:'reply-1'}});
+const thought = entryKey({{content_type:'xiaxia_thought', thought_id:'thought-1'}});
+process.stdout.write(JSON.stringify({{annotation, reply, thought}}));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    keys = json.loads(result.stdout)
+    assert keys == {
+        "annotation": "annotation:parent-1",
+        "reply": "reply:reply-1",
+        "thought": "thought:thought-1",
+    }
+    assert len(set(keys.values())) == 3
+
+    watch_js = (ROOT / "xiaxia_watch_house/static/watch.js").read_text(encoding="utf-8")
+    assert "window.XiaxiaTimelineEntryKey(entry)" in watch_js
+    assert "👤', label: '我的痕迹" in watch_js
+    assert "💭', label: 'Xiaxia Thought" in watch_js
+    assert "💬', label: 'Xiaxia 回复" in watch_js
+    assert "timeline.appendChild(card)" in watch_js
+
+
+def test_v11_cinema_presentation_is_incremental_and_mobile_first():
+    library = (ROOT / "xiaxia_watch_house/templates/watch_library.html").read_text(encoding="utf-8")
+    detail = (ROOT / "xiaxia_watch_house/templates/watch_detail.html").read_text(encoding="utf-8")
+    css = (ROOT / "xiaxia_watch_house/static/style.css").read_text(encoding="utf-8")
+    for heading in ["Xiaxia Cinema", "正在观看", "想看的影片", "已经看完"]:
+        assert heading in library
+    for label in ["影片信息", "来源", "字幕", "总时长", "我的进度", "Xiaxia 进度"]:
+        assert label in detail
+    assert "@media (max-width: 560px)" in css
+    assert ".information-grid { grid-template-columns: repeat(2" in css
+
+
+def test_private_library_and_watch_pages_render(web_client, csrf, make_film):
+    film = make_film("Want To Watch")
+    watching = make_film("Watching Now", duration_seconds=100)
+    completed = make_film("Finished Film", duration_seconds=100)
+    web_client.put(
+        f"/api/web/films/{watching['film_id']}/progress",
+        json={"current_seconds": 35, "duration_seconds": 100, "playback_state": "paused"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    web_client.put(
+        f"/api/web/films/{completed['film_id']}/progress",
+        json={"current_seconds": 100, "duration_seconds": 100, "playback_state": "ended"},
+        headers={"X-CSRF-Token": csrf},
+    )
     library = web_client.get("/watch")
     detail = web_client.get(f"/watch/{film['film_id']}")
-    assert library.status_code == 200 and "我们的影片库" in library.get_data(as_text=True)
+    library_html = library.get_data(as_text=True)
+    assert library.status_code == 200 and "Xiaxia Cinema" in library_html
+    assert "正在观看" in library_html and "想看的影片" in library_html and "已经看完" in library_html
     html = detail.get_data(as_text=True)
     assert detail.status_code == 200
     assert "local-video-file" in html and "annotation-form" in html and "subtitle-form" in html

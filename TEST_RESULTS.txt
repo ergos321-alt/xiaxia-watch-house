@@ -1,0 +1,38 @@
+Xiaxia Reality / Hand V1.1 verification
+Date: 2026-08-25 UTC
+
+Baseline verification before implementation
+-------------------------------------------
+Command: pytest -q
+Result: 33 passed in 0.33s
+
+Command: python -m openapi_spec_validator openapi.yaml
+Result: openapi.yaml: OK
+
+Final verification
+------------------
+Command: python -m py_compile app.py hand.py eye.py vision.py
+Result: passed
+
+Command: pytest -q
+Result: 67 passed in 0.42s
+
+Command: python -m openapi_spec_validator openapi.yaml
+Result: openapi.yaml: OK
+
+Incremental regression audit
+----------------------------
+- All V1 Flask route/method pairs remain present.
+- Exactly five server routes were added, all under /eye.
+- No existing OpenAPI path or operation was removed.
+- Custom GPT OpenAPI adds only /eye/requests and
+  /eye/requests/{request_id}; no device endpoint is exposed.
+- Production servers[0].url is unchanged.
+- history.py, reality.py, semantic.py, spatial.py, weather.py,
+  requirements.txt and Procfile are byte-identical to the V1 baseline.
+
+Scope boundary
+--------------
+Server implementation complete.
+Android Tasker real-device validation pending.
+No Render/Supabase deployment was performed.

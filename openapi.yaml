@@ -1,274 +1,405 @@
 openapi: 3.1.0
 info:
-  title: Xiaxia Watch House Action API
-  version: 2.0.0
-  description: Read bounded film context and let Xiaxia save progress, permanent thoughts, replies, and brief traces.
+  title: Xiaxia Reality and Hand API
+  version: 1.1.0
+  description: >-
+    Read Xiaxia Reality, Phone and Spatial context, manage personal places,
+    create strictly whitelisted Xiaxia Hand commands, and request an on-demand
+    Xiaxia Eye screen observation.
+
 servers:
-  - url: https://YOUR-RENDER-SERVICE.onrender.com
+  - url: https://xiaxia-sense-server.onrender.com
+
 security:
-  - ActionBearer: []
+  - bearerAuth: []
+
 paths:
-  /api/watch/videos:
+  /ping:
     get:
-      operationId: listWatchHouseFilms
-      description: List films with subtitle availability and separate user/Xiaxia progress.
+      operationId: getSenseHealth
+      summary: Check Reality Server health
+      security: []
       responses:
         "200":
-          description: Film list.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FilmListResponse"
+          $ref: "#/components/responses/JsonResponse"
+
+  /context:
+    get:
+      operationId: getFullSenseContext
+      summary: Read the complete sensor and interpreted context
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-  /api/watch/videos/{film_id}:
+
+  /reality/context:
     get:
-      operationId: getWatchHouseFilm
-      description: Get one film's metadata, duration, subtitle range, and both progress states.
+      operationId: getRealityContext
+      summary: Read the complete Reality context
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/summary:
+    get:
+      operationId: getRealitySummary
+      summary: Read compact Reality summaries and inferences
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/environment:
+    get:
+      operationId: getRealityEnvironment
+      summary: Read environment and weather reality
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/device:
+    get:
+      operationId: getRealityDevice
+      summary: Read device power and network reality
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/location:
+    get:
+      operationId: getRealityLocation
+      summary: Read location and mobility reality
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/phone:
+    get:
+      operationId: getPhoneActivity
+      summary: Read current Phone Activity
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/phone/timeline:
+    get:
+      operationId: getPhoneTimeline
+      summary: Read the recent Phone Activity timeline
       parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Film detail.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FilmDetailResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/state:
-    get:
-      operationId: getCurrentWatchHouseState
-      description: Get the active or most recently used film and both independent progress states.
-      responses:
-        "200":
-          description: Current watch state.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WatchStateResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-  /api/watch/videos/{film_id}/context:
-    get:
-      operationId: getSpoilerSafeFilmContext
-      description: Read a bounded subtitle window ending no later than the user's watch position.
-      parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: timestamp_seconds
+        - name: minutes
           in: query
-          required: false
-          description: Requested position in seconds; it is clamped to user progress.
-          schema:
-            type: number
-            minimum: 0
-        - name: before_seconds
-          in: query
-          required: false
-          description: Context length before the boundary, capped at 600 seconds.
-          schema:
-            type: number
-            minimum: 0
-            maximum: 600
-            default: 120
-      responses:
-        "200":
-          description: Spoiler-safe current context.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ContextResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/videos/{film_id}/transcript:
-    get:
-      operationId: readFilmTranscriptChunk
-      description: Read at most 200 subtitle cues by time range, chunk index, or continuation token.
-      parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: start_seconds
-          in: query
-          required: false
-          schema:
-            type: number
-            minimum: 0
-        - name: end_seconds
-          in: query
-          required: false
-          schema:
-            type: number
-            minimum: 0
-        - name: chunk_index
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-        - name: chunk_size_cues
-          in: query
-          required: false
+          description: Lookback window in minutes.
           schema:
             type: integer
             minimum: 1
-            maximum: 200
-            default: 80
-        - name: continuation
+            maximum: 2880
+            default: 60
+        - name: limit
           in: query
-          required: false
-          description: Opaque token returned by the previous chunk.
+          description: Maximum number of timeline events.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/phone/history:
+    get:
+      operationId: getPhoneHistory
+      summary: Read summarized short-term Phone Activity history
+      parameters:
+        - name: minutes
+          in: query
+          description: Relative lookback, or the window before end.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2880
+            default: 60
+        - name: start
+          in: query
+          description: Optional ISO 8601 start datetime.
           schema:
             type: string
-        - name: from_checkpoint
+            format: date-time
+        - name: end
           in: query
-          required: false
-          description: Start at Xiaxia's saved timestamp when no explicit range is supplied.
+          description: Optional ISO 8601 end datetime.
+          schema:
+            type: string
+            format: date-time
+        - name: types
+          in: query
+          description: History categories, or all.
+          schema:
+            type: string
+            default: all
+        - name: include_timeline
+          in: query
+          description: Include filtered raw timeline events.
           schema:
             type: boolean
             default: false
+        - name: timeline_limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
       responses:
         "200":
-          description: Bounded transcript chunk with navigation pointers.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TranscriptResponse"
+          $ref: "#/components/responses/JsonResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/videos/{film_id}/annotations:
+
+  /reality/spatial:
     get:
-      operationId: listFilmUserAnnotations
-      description: List user-owned annotations for one film without mixing in Xiaxia content.
-      parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      operationId: getSpatialReality
+      summary: Read current Spatial Reality
       responses:
         "200":
-          description: User annotation list.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AnnotationListResponse"
+          $ref: "#/components/responses/JsonResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/videos/{film_id}/thoughts:
+
+  /reality/spatial/history:
     get:
-      operationId: listXiaxiaFilmThoughts
-      description: List Xiaxia-owned independent thoughts for one film.
+      operationId: getSpatialHistory
+      summary: Read recent location history and movement analysis
       parameters:
-        - name: film_id
-          in: path
-          required: true
+        - name: minutes
+          in: query
           schema:
-            type: string
-            format: uuid
+            type: integer
+            minimum: 1
+            maximum: 2880
+            default: 30
       responses:
         "200":
-          description: Xiaxia thought list.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ThoughtListResponse"
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/spatial/nearby:
+    get:
+      operationId: findNearbyPlaces
+      summary: Search nearby Amap POIs from the current location
+      parameters:
+        - name: keywords
+          in: query
+          schema:
+            type: string
+        - name: types
+          in: query
+          schema:
+            type: string
+        - name: radius
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1000
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/spatial/route:
+    get:
+      operationId: getSpatialRoute
+      summary: Plan a route with the existing Spatial and Amap capability
+      description: >-
+        Use one destination form: a personal place name, an Amap POI location,
+        or WGS84 latitude and longitude.
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [walking, driving, cycling, electrobike]
+            default: walking
+        - name: place
+          in: query
+          description: Saved personal place name.
+          schema:
+            type: string
+        - name: poi_location
+          in: query
+          description: Amap GCJ-02 longitude,latitude string.
+          schema:
+            type: string
+        - name: poi_name
+          in: query
+          schema:
+            type: string
+        - name: latitude
+          in: query
+          description: WGS84 destination latitude.
+          schema:
+            type: number
+            minimum: -90
+            maximum: 90
+        - name: longitude
+          in: query
+          description: WGS84 destination longitude.
+          schema:
+            type: number
+            minimum: -180
+            maximum: 180
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/ErrorResponse"
+
+  /reality/spatial/places:
+    get:
+      operationId: listPersonalPlaces
+      summary: List saved Personal Places and current relations
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
-      operationId: createXiaxiaFilmThought
-      description: Create Xiaxia's independent thought; the server fixes actor=xiaxia.
-      parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      operationId: savePersonalPlace
+      summary: Save or update a Personal Place
+      x-openai-isConsequential: true
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateThoughtRequest"
+              $ref: "#/components/schemas/PersonalPlaceRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /reality/spatial/places/from-poi:
+    post:
+      operationId: savePersonalPlaceFromPoi
+      summary: Save a Personal Place from an Amap POI
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PersonalPlaceFromPoiRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/spatial/places/{name}:
+    get:
+      operationId: getPersonalPlace
+      summary: Read one Personal Place
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      operationId: deletePersonalPlace
+      summary: Delete one Personal Place
+      x-openai-isConsequential: true
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /reality/status:
+    get:
+      operationId: getRealityStatus
+      summary: Read sensor freshness and service status
+      responses:
+        "200":
+          $ref: "#/components/responses/JsonResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /hand/commands:
+    post:
+      operationId: createHandCommand
+      summary: Create one strictly whitelisted Android action command
+      description: >-
+        Creates a semantic command only. Tasker performs the Android action.
+        Never use this operation for an action outside the declared whitelist.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HandCommandRequest"
       responses:
         "201":
-          description: Thought created.
+          description: Command created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ThoughtResponse"
+                $ref: "#/components/schemas/HandCreateResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/annotations/{annotation_id}/reply:
-    post:
-      operationId: createXiaxiaAnnotationReply
-      description: Reply to one user annotation; the server fixes actor=xiaxia.
-      parameters:
-        - name: annotation_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateReplyRequest"
-      responses:
-        "201":
-          description: Reply created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReplyResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/videos/{film_id}/fleeting-traces:
+
+  /hand/commands/{command_id}:
     get:
-      operationId: listActiveFleetingTraces
-      description: List non-expired casual traces for one film.
+      operationId: getHandCommandStatus
+      summary: Read the current status of a Hand command
       parameters:
-        - name: film_id
+        - name: command_id
           in: path
           required: true
           schema:
@@ -276,604 +407,472 @@ paths:
             format: uuid
       responses:
         "200":
-          description: Active fleeting traces.
+          description: Current command state.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FleetingTraceListResponse"
+                $ref: "#/components/schemas/HandCommand"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/ErrorResponse"
+
+  /eye/requests:
     post:
-      operationId: createXiaxiaFleetingTrace
-      description: Create a short 30-day Xiaxia trace; the server fixes actor=xiaxia.
-      parameters:
-        - name: film_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      operationId: createEyeScreenRequest
+      summary: Ask Xiaxia Eye to observe the current Android screen once
+      description: >-
+        Creates one on-demand screen observation request. The device captures
+        only after receiving this request; this operation never starts
+        continuous screenshots or recording.
+      x-openai-isConsequential: true
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateFleetingTraceRequest"
+              $ref: "#/components/schemas/EyeScreenRequest"
       responses:
         "201":
-          description: Fleeting trace created.
+          description: Eye request created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FleetingTraceResponse"
+                $ref: "#/components/schemas/EyeCreateResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-  /api/watch/xiaxia/progress:
-    post:
-      operationId: updateXiaxiaViewingCheckpoint
-      description: Save Xiaxia's own reading checkpoint without changing user watch progress.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateXiaxiaProgressRequest"
+
+  /eye/requests/{request_id}:
+    get:
+      operationId: getEyeScreenRequest
+      summary: Read an Eye request status and structured visual facts
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
-          description: Xiaxia viewing state updated.
+          description: Current Eye request state.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/XiaxiaProgressResponse"
+                $ref: "#/components/schemas/EyeRequest"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"
+          $ref: "#/components/responses/ErrorResponse"
+
 components:
   securitySchemes:
-    ActionBearer:
+    bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: opaque-token
+
   responses:
-    BadRequest:
-      description: Request validation failed.
+    JsonResponse:
+      description: Successful JSON response.
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    Unauthorized:
-      description: Action bearer token is missing or invalid.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-    NotFound:
-      description: Requested film or annotation was not found.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
-  schemas:
+            type: object
+            additionalProperties: true
     ErrorResponse:
+      description: Request error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid Bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
       type: object
       properties:
         error:
-          $ref: "#/components/schemas/ErrorBody"
-      required: [error]
-    ErrorBody:
-      type: object
-      properties:
-        code:
           type: string
         message:
           type: string
-      required: [code, message]
-    SubtitleRange:
-      type: object
-      properties:
-        available:
-          type: boolean
-        start_seconds:
-          type: number
-          nullable: true
-        end_seconds:
-          type: number
-          nullable: true
-        cue_count:
-          type: integer
-      required: [available, start_seconds, end_seconds, cue_count]
-    UserProgress:
-      type: object
-      properties:
-        film_id:
-          type: string
-          format: uuid
-        actor:
-          type: string
-          enum: [user]
-        current_seconds:
-          type: number
-        duration_seconds:
-          type: number
-          nullable: true
-        playback_state:
-          type: string
-        watch_intent:
-          type: string
-          nullable: true
-          enum: [rewatch]
-        updated_at:
-          type: string
-          format: date-time
-      required: [film_id, actor, current_seconds, duration_seconds, playback_state, watch_intent, updated_at]
-    Copresence:
-      type: object
-      properties:
-        state:
-          type: string
-          enum: [not_started, together, user_ahead, xiaxia_ahead, far_apart]
-        message:
-          type: string
-        user_seconds:
-          type: number
-        xiaxia_seconds:
-          type: number
-        difference_seconds:
-          type: number
-        together_window_seconds:
-          type: number
-      required: [state, message, user_seconds, xiaxia_seconds, difference_seconds, together_window_seconds]
-    XiaxiaViewingState:
-      type: object
-      properties:
-        film_id:
-          type: string
-          format: uuid
-        actor:
-          type: string
-          enum: [xiaxia]
-        last_timestamp_seconds:
-          type: number
-        last_subtitle_cue_id:
-          type: string
-          nullable: true
-          format: uuid
-        chunk_checkpoint:
-          type: integer
-          nullable: true
-        completed:
-          type: boolean
-        updated_at:
-          type: string
-          format: date-time
-      required: [film_id, actor, last_timestamp_seconds, last_subtitle_cue_id, chunk_checkpoint, completed, updated_at]
-    Film:
-      type: object
-      properties:
-        film_id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        source_type:
-          type: string
-          enum: [local, youtube, bilibili, iframe, external]
-        source_url:
-          type: string
-          nullable: true
-        external_video_id:
-          type: string
-          nullable: true
-        duration_seconds:
-          type: number
-          nullable: true
-        subtitle_status:
-          type: string
-        subtitle_language:
-          type: string
-          nullable: true
-        last_activity_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      required: [film_id, title, source_type, source_url, external_video_id, duration_seconds, subtitle_status, subtitle_language, last_activity_at, created_at, updated_at]
-    FilmWithState:
-      type: object
-      properties:
-        film_id:
-          type: string
-          format: uuid
-        title:
-          type: string
-        source_type:
-          type: string
-          enum: [local, youtube, bilibili, iframe, external]
-        source_url:
-          type: string
-          nullable: true
-        external_video_id:
-          type: string
-          nullable: true
-        duration_seconds:
-          type: number
-          nullable: true
-        subtitle_status:
-          type: string
-        subtitle_language:
-          type: string
-          nullable: true
-        last_activity_at:
-          type: string
-          format: date-time
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        subtitle_range:
-          $ref: "#/components/schemas/SubtitleRange"
-        user_progress:
-          type: object
-          nullable: true
-          properties:
-            film_id: {type: string, format: uuid}
-            actor: {type: string, enum: [user]}
-            current_seconds: {type: number}
-            duration_seconds: {type: number, nullable: true}
-            playback_state: {type: string}
-            watch_intent: {type: string, nullable: true}
-            updated_at: {type: string, format: date-time}
-        xiaxia_viewing_state:
-          type: object
-          nullable: true
-          properties:
-            film_id: {type: string, format: uuid}
-            actor: {type: string, enum: [xiaxia]}
-            last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: string, format: uuid, nullable: true}
-            chunk_checkpoint: {type: integer, nullable: true}
-            completed: {type: boolean}
-            updated_at: {type: string, format: date-time}
-        copresence:
-          $ref: "#/components/schemas/Copresence"
-      required: [film_id, title, source_type, source_url, external_video_id, duration_seconds, subtitle_status, subtitle_language, last_activity_at, created_at, updated_at, subtitle_range, user_progress, xiaxia_viewing_state, copresence]
-    SubtitleCue:
-      type: object
-      properties:
-        cue_id:
-          type: string
-          format: uuid
-        sequence_number:
-          type: integer
-        start_seconds:
-          type: number
-        end_seconds:
-          type: number
-        text:
-          type: string
-        language:
-          type: string
-      required: [cue_id, sequence_number, start_seconds, end_seconds, text, language]
-    UserAnnotation:
-      type: object
-      properties:
-        annotation_id: {type: string, format: uuid}
-        film_id: {type: string, format: uuid}
-        actor: {type: string, enum: [user]}
-        content_type: {type: string, enum: [user_annotation]}
-        start_seconds: {type: number}
-        end_seconds: {type: number, nullable: true}
-        cue_id: {type: string, format: uuid, nullable: true}
-        content: {type: string}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-      required: [annotation_id, film_id, actor, content_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
-    XiaxiaThought:
-      type: object
-      properties:
-        thought_id: {type: string, format: uuid}
-        film_id: {type: string, format: uuid}
-        actor: {type: string, enum: [xiaxia]}
-        content_type: {type: string, enum: [xiaxia_thought]}
-        trace_type: {type: string, enum: [permanent]}
-        start_seconds: {type: number}
-        end_seconds: {type: number, nullable: true}
-        cue_id: {type: string, format: uuid, nullable: true}
-        content: {type: string}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-      required: [thought_id, film_id, actor, content_type, trace_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
-    XiaxiaReply:
-      type: object
-      properties:
-        reply_id: {type: string, format: uuid}
-        annotation_id: {type: string, format: uuid}
-        film_id: {type: string, format: uuid}
-        actor: {type: string, enum: [xiaxia]}
-        content_type: {type: string, enum: [xiaxia_reply]}
-        start_seconds: {type: number}
-        end_seconds: {type: number, nullable: true}
-        cue_id: {type: string, format: uuid, nullable: true}
-        content: {type: string}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-      required: [reply_id, annotation_id, film_id, actor, content_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
-    FleetingTrace:
-      type: object
-      properties:
-        trace_id: {type: string, format: uuid}
-        film_id: {type: string, format: uuid}
-        actor: {type: string, enum: [user, xiaxia]}
-        content_type: {type: string, enum: [fleeting_trace]}
-        trace_type: {type: string, enum: [fleeting]}
-        start_seconds: {type: number}
-        end_seconds: {type: number, nullable: true}
-        cue_id: {type: string, format: uuid, nullable: true}
-        content: {type: string, maxLength: 160}
-        expires_at: {type: string, format: date-time}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-      required: [trace_id, film_id, actor, content_type, trace_type, start_seconds, end_seconds, cue_id, content, expires_at, created_at, updated_at]
-    FilmListResponse:
-      type: object
-      properties:
-        films:
-          type: array
-          items:
-            $ref: "#/components/schemas/FilmWithState"
-        count:
-          type: integer
-      required: [films, count]
-    FilmDetailResponse:
-      type: object
-      properties:
-        film:
-          $ref: "#/components/schemas/FilmWithState"
-      required: [film]
-    WatchStateResponse:
-      type: object
-      properties:
-        current_film:
-          type: object
-          nullable: true
-          properties:
-            film_id: {type: string, format: uuid}
-            title: {type: string}
-            source_type: {type: string}
-            source_url: {type: string, nullable: true}
-            external_video_id: {type: string, nullable: true}
-            duration_seconds: {type: number, nullable: true}
-            subtitle_status: {type: string}
-            subtitle_language: {type: string, nullable: true}
-            last_activity_at: {type: string, format: date-time}
-            created_at: {type: string, format: date-time}
-            updated_at: {type: string, format: date-time}
-            subtitle_range:
-              $ref: "#/components/schemas/SubtitleRange"
-            user_progress:
-              type: object
-              nullable: true
-              properties:
-                film_id: {type: string, format: uuid}
-                actor: {type: string}
-                current_seconds: {type: number}
-                duration_seconds: {type: number, nullable: true}
-                playback_state: {type: string}
-                watch_intent: {type: string, nullable: true}
-                updated_at: {type: string}
-            xiaxia_viewing_state:
-              type: object
-              nullable: true
-              properties:
-                film_id: {type: string, format: uuid}
-                actor: {type: string}
-                last_timestamp_seconds: {type: number}
-                last_subtitle_cue_id: {type: string, nullable: true}
-                chunk_checkpoint: {type: integer, nullable: true}
-                completed: {type: boolean}
-                updated_at: {type: string}
-            copresence:
-              $ref: "#/components/schemas/Copresence"
-        user_progress:
-          type: object
-          nullable: true
-          properties:
-            film_id: {type: string, format: uuid}
-            actor: {type: string}
-            current_seconds: {type: number}
-            duration_seconds: {type: number, nullable: true}
-            playback_state: {type: string}
-            watch_intent: {type: string, nullable: true}
-            updated_at: {type: string}
-        xiaxia_viewing_state:
-          type: object
-          nullable: true
-          properties:
-            film_id: {type: string, format: uuid}
-            actor: {type: string}
-            last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: string, nullable: true}
-            chunk_checkpoint: {type: integer, nullable: true}
-            completed: {type: boolean}
-            updated_at: {type: string}
-      required: [current_film, user_progress, xiaxia_viewing_state]
-    ContextResponse:
-      type: object
-      properties:
-        film:
-          $ref: "#/components/schemas/Film"
-        requested_timestamp_seconds: {type: number}
-        evidence_start_seconds: {type: number}
-        evidence_end_seconds: {type: number}
-        spoiler_boundary_seconds: {type: number}
-        subtitle_cues:
-          type: array
-          items:
-            $ref: "#/components/schemas/SubtitleCue"
-        timeline_entries:
+        details:
           type: array
           items:
             type: object
-            properties:
-              annotation_id: {type: string, format: uuid}
-              thought_id: {type: string, format: uuid}
-              reply_id: {type: string, format: uuid}
-              trace_id: {type: string, format: uuid}
-              film_id: {type: string, format: uuid}
-              actor: {type: string}
-              content_type: {type: string}
-              trace_type: {type: string}
-              start_seconds: {type: number}
-              end_seconds: {type: number, nullable: true}
-              cue_id: {type: string, format: uuid, nullable: true}
-              content: {type: string}
-              expires_at: {type: string, format: date-time}
-              created_at: {type: string, format: date-time}
-              updated_at: {type: string, format: date-time}
-        user_progress:
+            additionalProperties: true
+      required: [error]
+      additionalProperties: true
+
+    PersonalPlaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        kind:
+          type: string
+          default: custom
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        radius_m:
+          type: number
+          exclusiveMinimum: 0
+          default: 150
+        note:
+          type: string
+        use_current_location:
+          type: boolean
+      required: [name]
+      additionalProperties: false
+
+    PersonalPlaceFromPoiRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        poi_name:
+          type: string
+        poi_location:
+          type: string
+          description: Amap GCJ-02 longitude,latitude.
+        poi_type:
+          type: string
+        poi_address:
+          type: string
+        poi_id:
+          type: string
+        kind:
+          type: string
+          default: custom
+        radius_m:
+          type: number
+          exclusiveMinimum: 0
+          default: 150
+        note:
+          type: string
+        poi:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            type:
+              type: string
+            address:
+              type: string
+            location:
+              type: string
+          additionalProperties: false
+      additionalProperties: false
+
+    HandCommandRequest:
+      type: object
+      description: >-
+        Semantic Android command. The action determines which parameter fields
+        are valid. The server strictly validates the action/parameter pairing
+        before persisting a command.
+      properties:
+        action:
+          type: string
+          enum:
+            - flashlight
+            - volume
+            - open_app
+            - timer
+            - alarm
+            - do_not_disturb
+            - battery_saver
+            - navigation
+            - knock
+        parameters:
+          type: object
+          description: Parameters for the selected action.
+          properties:
+            state:
+              type: string
+              enum: ["on", "off"]
+              description: Used by flashlight, do_not_disturb, and battery_saver.
+            stream:
+              type: string
+              enum: [media]
+              description: Used by volume.
+            level:
+              type: integer
+              minimum: 0
+              maximum: 100
+              description: Used by volume.
+            app:
+              type: string
+              minLength: 1
+              maxLength: 120
+              description: Used by open_app.
+            duration_seconds:
+              type: integer
+              minimum: 1
+              maximum: 604800
+              description: Used by timer.
+            label:
+              type: string
+              maxLength: 200
+              description: Optional label used by timer or alarm.
+            time:
+              type: string
+              pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+              description: Used by alarm; device-local 24-hour HH:MM.
+            destination:
+              type: string
+              minLength: 1
+              maxLength: 500
+              description: Used by navigation.
+            latitude:
+              type: number
+              minimum: -90
+              maximum: 90
+              description: Optional navigation destination latitude.
+            longitude:
+              type: number
+              minimum: -180
+              maximum: 180
+              description: Optional navigation destination longitude.
+            place_id:
+              type: string
+              minLength: 1
+              maxLength: 200
+              description: Optional saved place identifier for navigation.
+            travel_mode:
+              type: string
+              enum: [walking, driving, cycling, electrobike]
+              description: Optional navigation travel mode.
+            pattern:
+              type: string
+              enum: [xiaxia]
+              description: Used by knock; V1.1 supports only xiaxia.
+          additionalProperties: false
+      required: [action, parameters]
+      additionalProperties: false
+
+    HandCreateResponse:
+      type: object
+      properties:
+        command_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: pending
+      required: [command_id, status]
+      additionalProperties: false
+
+    EyeScreenRequest:
+      type: object
+      description: One explicit, on-demand request to observe the current screen.
+      properties:
+        frame_count:
+          type: integer
+          enum: [1]
+          default: 1
+          description: Screen Sense V1 captures exactly one frame.
+        focus:
+          type: string
+          maxLength: 300
+          description: Optional question or visual area to pay attention to.
+      additionalProperties: false
+
+    EyeCreateResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: pending
+        expires_at:
+          type: string
+          format: date-time
+      required: [request_id, status, expires_at]
+      additionalProperties: false
+
+    EyeRequest:
+      type: object
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        request_type:
+          type: string
+          const: screen
+        frame_count:
+          type: integer
+        focus:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, capturing, uploaded, analyzing, completed, failed, expired]
+        created_at:
+          type: string
+          format: date-time
+        claimed_at:
+          type: string
+          format: date-time
+          nullable: true
+        uploaded_at:
+          type: string
+          format: date-time
+          nullable: true
+        analysis_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        visual_facts:
           type: object
           nullable: true
           properties:
-            film_id: {type: string}
-            actor: {type: string}
-            current_seconds: {type: number}
-            duration_seconds: {type: number, nullable: true}
-            playback_state: {type: string}
-            watch_intent: {type: string, nullable: true}
-            updated_at: {type: string}
-        xiaxia_viewing_state:
+            scene:
+              type: string
+            visible_people:
+              type: array
+              items:
+                type: string
+            actions:
+              type: array
+              items:
+                type: string
+            objects:
+              type: array
+              items:
+                type: string
+            screen_text:
+              type: array
+              items:
+                type: string
+            uncertainties:
+              type: array
+              items:
+                type: string
+          required:
+            - scene
+            - visible_people
+            - actions
+            - objects
+            - screen_text
+            - uncertainties
+          additionalProperties: false
+        error:
           type: object
           nullable: true
           properties:
-            film_id: {type: string}
-            actor: {type: string}
-            last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: string, nullable: true}
-            chunk_checkpoint: {type: integer, nullable: true}
-            completed: {type: boolean}
-            updated_at: {type: string}
-      required: [film, requested_timestamp_seconds, evidence_start_seconds, evidence_end_seconds, spoiler_boundary_seconds, subtitle_cues, timeline_entries, user_progress, xiaxia_viewing_state]
-    TranscriptResponse:
-      type: object
-      properties:
-        film_id: {type: string, format: uuid}
-        available_start_seconds: {type: number, nullable: true}
-        available_end_seconds: {type: number, nullable: true}
-        range_start_seconds: {type: number}
-        range_end_seconds: {type: number}
-        cue_count: {type: integer}
-        chunk_index: {type: integer}
-        chunk_size_cues: {type: integer}
-        cues:
-          type: array
-          items:
-            $ref: "#/components/schemas/SubtitleCue"
-        has_previous: {type: boolean}
-        has_next: {type: boolean}
-        previous_chunk_index: {type: integer}
-        next_chunk_index: {type: integer}
-        continuation: {type: string}
-      required: [film_id, available_start_seconds, available_end_seconds, cue_count, chunk_index, chunk_size_cues, cues, has_previous, has_next]
-    AnnotationListResponse:
-      type: object
-      properties:
-        film_id: {type: string, format: uuid}
-        annotations:
-          type: array
-          items:
-            $ref: "#/components/schemas/UserAnnotation"
-      required: [film_id, annotations]
-    ThoughtListResponse:
-      type: object
-      properties:
-        film_id: {type: string, format: uuid}
-        thoughts:
-          type: array
-          items:
-            $ref: "#/components/schemas/XiaxiaThought"
-      required: [film_id, thoughts]
-    CreateThoughtRequest:
-      type: object
-      properties:
-        start_seconds: {type: number, minimum: 0}
-        end_seconds: {type: number, minimum: 0}
-        cue_id: {type: string, format: uuid}
-        content: {type: string, minLength: 1, maxLength: 8000}
-      required: [start_seconds, content]
+            code:
+              type: string
+            message:
+              type: string
+          required: [code, message]
+          additionalProperties: false
+      required:
+        - request_id
+        - request_type
+        - frame_count
+        - focus
+        - status
+        - created_at
+        - claimed_at
+        - uploaded_at
+        - analysis_started_at
+        - updated_at
+        - expires_at
+        - completed_at
+        - result_expires_at
+        - visual_facts
+        - error
       additionalProperties: false
-    ThoughtResponse:
+
+    HandCommand:
       type: object
       properties:
-        thought:
-          $ref: "#/components/schemas/XiaxiaThought"
-      required: [thought]
-    FleetingTraceListResponse:
-      type: object
-      properties:
-        film_id: {type: string, format: uuid}
-        fleeting_traces:
-          type: array
-          items:
-            $ref: "#/components/schemas/FleetingTrace"
-      required: [film_id, fleeting_traces]
-    CreateFleetingTraceRequest:
-      type: object
-      properties:
-        start_seconds: {type: number, minimum: 0}
-        end_seconds: {type: number, minimum: 0}
-        cue_id: {type: string, format: uuid}
-        content: {type: string, minLength: 1, maxLength: 160}
-      required: [start_seconds, content]
+        command_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            - flashlight
+            - volume
+            - open_app
+            - timer
+            - alarm
+            - do_not_disturb
+            - battery_saver
+            - navigation
+            - knock
+        parameters:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+          enum: [pending, delivered, executed, failed, expired]
+        created_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+        executed_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        error:
+          type: string
+          nullable: true
+      required:
+        - command_id
+        - action
+        - parameters
+        - status
+        - created_at
+        - delivered_at
+        - executed_at
+        - expires_at
+        - result
+        - error
       additionalProperties: false
-    FleetingTraceResponse:
-      type: object
-      properties:
-        fleeting_trace:
-          $ref: "#/components/schemas/FleetingTrace"
-      required: [fleeting_trace]
-    CreateReplyRequest:
-      type: object
-      properties:
-        start_seconds: {type: number, minimum: 0}
-        end_seconds: {type: number, minimum: 0}
-        cue_id: {type: string, format: uuid}
-        content: {type: string, minLength: 1, maxLength: 8000}
-      required: [content]
-      additionalProperties: false
-    ReplyResponse:
-      type: object
-      properties:
-        reply:
-          $ref: "#/components/schemas/XiaxiaReply"
-      required: [reply]
-    UpdateXiaxiaProgressRequest:
-      type: object
-      properties:
-        film_id: {type: string, format: uuid}
-        last_timestamp_seconds: {type: number, minimum: 0}
-        last_subtitle_cue_id: {type: string, format: uuid}
-        chunk_checkpoint: {type: integer, minimum: 0}
-        completed: {type: boolean, default: false}
-      required: [film_id, last_timestamp_seconds]
-      additionalProperties: false
-    XiaxiaProgressResponse:
-      type: object
-      properties:
-        xiaxia_viewing_state:
-          $ref: "#/components/schemas/XiaxiaViewingState"
-      required: [xiaxia_viewing_state]

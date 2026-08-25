@@ -10,6 +10,7 @@ from werkzeug.security import check_password_hash
 from .auth import csrf_required, ensure_csrf_token, json_error, reject_identity_fields, web_login_required
 from .models import (
     Film,
+    FleetingTrace,
     SubtitleCue,
     UserAnnotation,
     UserProgress,
@@ -20,7 +21,12 @@ from .models import (
 from .services import (
     ValidationError,
     annotation_dict,
+    cleanup_expired_fleeting_traces,
+    derive_copresence,
+    derive_shared_stops,
     film_dict,
+    fleeting_trace_dict,
+    new_trace_expiry,
     progress_dict,
     replace_subtitles,
     reply_dict,
@@ -215,11 +221,45 @@ def update_user_progress(film_id: str):
         progress.current_seconds = current
         progress.duration_seconds = duration
         progress.playback_state = state
+        if state == "playing":
+            progress.watch_intent = None
         progress.updated_at = utcnow()
         if duration is not None:
             film.duration_seconds = duration
         touch_film(film)
         set_current_film(g.db, film_id)
+        g.db.commit()
+        return jsonify({"user_progress": progress_dict(progress)})
+    except ValidationError as exc:
+        g.db.rollback()
+        return json_error("validation_error", str(exc), 400)
+
+
+@web_bp.put("/api/web/films/<film_id>/watch-intent")
+@web_login_required(api=True)
+@csrf_required
+def update_watch_intent(film_id: str):
+    film, error = _film_or_404(film_id)
+    if error:
+        return error
+    try:
+        data = _json()
+        identity_error = reject_identity_fields(data)
+        if identity_error:
+            return identity_error
+        intent = data.get("watch_intent")
+        if intent not in {"rewatch", None}:
+            raise ValidationError("watch_intent must be rewatch or null")
+        progress = g.db.get(UserProgress, film_id)
+        if not progress:
+            progress = UserProgress(film_id=film_id, actor="user")
+            g.db.add(progress)
+        progress.watch_intent = intent
+        if intent == "rewatch":
+            progress.current_seconds = 0
+            progress.playback_state = "idle"
+        progress.updated_at = utcnow()
+        touch_film(film)
         g.db.commit()
         return jsonify({"user_progress": progress_dict(progress)})
     except ValidationError as exc:
@@ -304,6 +344,63 @@ def annotation_item(annotation_id: str):
         return json_error("validation_error", str(exc), 400)
 
 
+@web_bp.route("/api/web/films/<film_id>/fleeting-traces", methods=["GET", "POST"])
+@web_login_required(api=True)
+def web_fleeting_traces(film_id: str):
+    film, error = _film_or_404(film_id)
+    if error:
+        return error
+    if request.method == "GET":
+        rows = g.db.scalars(
+            select(FleetingTrace)
+            .where(FleetingTrace.film_id == film_id, FleetingTrace.expires_at > utcnow())
+            .order_by(FleetingTrace.start_seconds, FleetingTrace.created_at)
+        ).all()
+        return jsonify({"film_id": film_id, "fleeting_traces": [fleeting_trace_dict(row) for row in rows]})
+    csrf_result = csrf_required(lambda: None)()
+    if csrf_result is not None:
+        return csrf_result
+    try:
+        data = _json()
+        identity_error = reject_identity_fields(data)
+        if identity_error:
+            return identity_error
+        start = seconds(data.get("start_seconds"), "start_seconds")
+        end = seconds(data.get("end_seconds"), "end_seconds", required=False)
+        validate_range(start, end)
+        cleanup_expired_fleeting_traces(g.db)
+        item = FleetingTrace(
+            film_id=film_id,
+            actor="user",
+            content_type="fleeting_trace",
+            start_seconds=start,
+            end_seconds=end,
+            cue_id=validate_cue_for_film(g.db, data.get("cue_id"), film_id),
+            content=require_text(data.get("content"), "content", 160),
+            expires_at=new_trace_expiry(),
+        )
+        g.db.add(item)
+        touch_film(film)
+        g.db.commit()
+        return jsonify({"fleeting_trace": fleeting_trace_dict(item)}), 201
+    except ValidationError as exc:
+        g.db.rollback()
+        return json_error("validation_error", str(exc), 400)
+
+
+@web_bp.delete("/api/web/fleeting-traces/<trace_id>")
+@web_login_required(api=True)
+@csrf_required
+def delete_fleeting_trace(trace_id: str):
+    item = g.db.get(FleetingTrace, trace_id)
+    if not item:
+        return json_error("fleeting_trace_not_found", "Fleeting trace not found", 404)
+    film_id = item.film_id
+    g.db.delete(item)
+    g.db.commit()
+    return jsonify({"deleted": True, "trace_id": trace_id, "film_id": film_id})
+
+
 @web_bp.route("/api/web/thoughts/<thought_id>", methods=["PUT", "DELETE"])
 @web_login_required(api=True)
 @csrf_required
@@ -380,18 +477,48 @@ def timeline(film_id: str):
     annotation_query = select(UserAnnotation).where(UserAnnotation.film_id == film_id)
     thought_query = select(XiaxiaThought).where(XiaxiaThought.film_id == film_id)
     reply_query = select(XiaxiaReply).where(XiaxiaReply.film_id == film_id)
+    fleeting_query = select(FleetingTrace).where(
+        FleetingTrace.film_id == film_id, FleetingTrace.expires_at > utcnow()
+    )
     if since:
         annotation_query = annotation_query.where(UserAnnotation.updated_at > since)
         thought_query = thought_query.where(XiaxiaThought.updated_at > since)
         reply_query = reply_query.where(XiaxiaReply.updated_at > since)
+        fleeting_query = fleeting_query.where(FleetingTrace.updated_at > since)
     annotations = g.db.scalars(annotation_query).all()
     thoughts = g.db.scalars(thought_query).all()
     replies = g.db.scalars(reply_query).all()
+    fleeting = g.db.scalars(fleeting_query).all()
     entries = [annotation_dict(x) for x in annotations]
     entries += [thought_dict(x) for x in thoughts]
     entries += [reply_dict(x) for x in replies]
+    entries += [fleeting_trace_dict(x) for x in fleeting]
     entries.sort(key=lambda x: (x["start_seconds"], x["created_at"] or ""))
-    return jsonify({"entries": entries, "cursor": server_cursor.isoformat().replace("+00:00", "Z")})
+    all_entries = entries
+    if since:
+        all_annotations = g.db.scalars(select(UserAnnotation).where(UserAnnotation.film_id == film_id)).all()
+        all_thoughts = g.db.scalars(select(XiaxiaThought).where(XiaxiaThought.film_id == film_id)).all()
+        all_replies = g.db.scalars(select(XiaxiaReply).where(XiaxiaReply.film_id == film_id)).all()
+        all_fleeting = g.db.scalars(
+            select(FleetingTrace).where(
+                FleetingTrace.film_id == film_id, FleetingTrace.expires_at > utcnow()
+            )
+        ).all()
+        all_entries = [annotation_dict(x) for x in all_annotations]
+        all_entries += [thought_dict(x) for x in all_thoughts]
+        all_entries += [reply_dict(x) for x in all_replies]
+        all_entries += [fleeting_trace_dict(x) for x in all_fleeting]
+    copresence = derive_copresence(
+        g.db.get(UserProgress, film_id), g.db.get(XiaxiaViewingState, film_id)
+    )
+    return jsonify(
+        {
+            "entries": entries,
+            "shared_stops": derive_shared_stops(film_id, all_entries),
+            "copresence": copresence,
+            "cursor": server_cursor.isoformat().replace("+00:00", "Z"),
+        }
+    )
 
 
 @web_bp.get("/api/web/films/<film_id>/state")

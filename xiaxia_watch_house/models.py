@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     CheckConstraint,
@@ -62,6 +62,9 @@ class Film(Base, TimestampMixin):
     cues: Mapped[list[SubtitleCue]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
     annotations: Mapped[list[UserAnnotation]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
     thoughts: Mapped[list[XiaxiaThought]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
+    fleeting_traces: Mapped[list[FleetingTrace]] = relationship(
+        cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class SubtitleCue(Base):
@@ -95,6 +98,10 @@ class UserProgress(Base):
             "playback_state in ('playing','paused','seeking','ended','idle')",
             name="user_progress_state_check",
         ),
+        CheckConstraint(
+            "watch_intent is null or watch_intent = 'rewatch'",
+            name="user_progress_intent_check",
+        ),
     )
 
     film_id: Mapped[str] = mapped_column(
@@ -104,6 +111,7 @@ class UserProgress(Base):
     current_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     duration_seconds: Mapped[float | None] = mapped_column(Float)
     playback_state: Mapped[str] = mapped_column(String(20), nullable=False, default="idle")
+    watch_intent: Mapped[str | None] = mapped_column(String(20))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
@@ -207,6 +215,42 @@ class XiaxiaReply(Base, TimestampMixin):
         Uuid(as_uuid=False), ForeignKey("subtitle_cues.cue_id", ondelete="SET NULL")
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+def default_trace_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=30)
+
+
+class FleetingTrace(Base, TimestampMixin):
+    __tablename__ = "fleeting_traces"
+    __table_args__ = (
+        CheckConstraint("actor in ('user','xiaxia')", name="fleeting_trace_actor_check"),
+        CheckConstraint("content_type = 'fleeting_trace'", name="fleeting_trace_type_check"),
+        CheckConstraint("start_seconds >= 0", name="fleeting_trace_start_check"),
+        CheckConstraint(
+            "end_seconds is null or end_seconds >= start_seconds",
+            name="fleeting_trace_end_check",
+        ),
+        CheckConstraint("length(content) <= 160", name="fleeting_trace_length_check"),
+        Index("ix_fleeting_traces_film_time", "film_id", "start_seconds"),
+        Index("ix_fleeting_traces_expiry", "expires_at"),
+    )
+
+    trace_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=new_uuid)
+    film_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False), ForeignKey("films.film_id", ondelete="CASCADE"), nullable=False
+    )
+    actor: Mapped[str] = mapped_column(String(20), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(30), nullable=False, default="fleeting_trace")
+    start_seconds: Mapped[float] = mapped_column(Float, nullable=False)
+    end_seconds: Mapped[float | None] = mapped_column(Float)
+    cue_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False), ForeignKey("subtitle_cues.cue_id", ondelete="SET NULL")
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=default_trace_expiry
+    )
 
 
 class WatchState(Base):

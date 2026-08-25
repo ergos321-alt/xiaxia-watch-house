@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_fresh_schema_metadata_and_postgres_script(app):
     expected = {
         "films", "subtitle_cues", "user_progress", "xiaxia_viewing_state",
-        "user_annotations", "xiaxia_thoughts", "xiaxia_replies", "watch_state",
+        "user_annotations", "xiaxia_thoughts", "xiaxia_replies", "fleeting_traces", "watch_state",
     }
     assert set(inspect(app.extensions["db_engine"]).get_table_names()) == expected
     sql = (ROOT / "schema.sql").read_text(encoding="utf-8").lower()
@@ -22,6 +22,11 @@ def test_fresh_schema_metadata_and_postgres_script(app):
     assert "create or replace function set_updated_at" in sql
     assert sql.index("create table films") < sql.index("create table subtitle_cues")
     assert "storage is intentionally not required" in sql
+    migration = (ROOT / "migrations/v1_1_to_v2.sql").read_text(encoding="utf-8").lower()
+    assert "add column if not exists watch_intent" in migration
+    assert "create table if not exists fleeting_traces" in migration
+    for destructive in ["drop table", "truncate", "delete from", "drop column"]:
+        assert destructive not in migration
 
 
 def _action_routes_from_flask(app):
@@ -64,14 +69,17 @@ def test_operation_ids_unique_and_descriptions_short():
     assert len(ids) == len(set(ids))
 
 
-def test_every_openapi_object_declares_properties():
+def test_openapi_uses_simple_types_and_every_object_declares_properties():
     spec = yaml.safe_load((ROOT / "openapi.yaml").read_text(encoding="utf-8"))
 
     def walk(node, path="root"):
         if isinstance(node, dict):
             node_type = node.get("type")
-            if node_type == "object" or (isinstance(node_type, list) and "object" in node_type):
+            assert not isinstance(node_type, list), f"Array/list type declaration at {path}"
+            if node_type == "object":
                 assert "properties" in node, f"Object without properties at {path}"
+            if "nullable" in node:
+                assert node["nullable"] is True, f"nullable must be true at {path}"
             assert "oneOf" not in node and "anyOf" not in node and "discriminator" not in node
             for key, value in node.items():
                 walk(value, f"{path}.{key}")
@@ -99,7 +107,8 @@ const entryKey = require({json.dumps(str(helper))});
 const annotation = entryKey({{content_type:'user_annotation', annotation_id:'parent-1'}});
 const reply = entryKey({{content_type:'xiaxia_reply', annotation_id:'parent-1', reply_id:'reply-1'}});
 const thought = entryKey({{content_type:'xiaxia_thought', thought_id:'thought-1'}});
-process.stdout.write(JSON.stringify({{annotation, reply, thought}}));
+const fleeting = entryKey({{content_type:'fleeting_trace', trace_id:'trace-1'}});
+process.stdout.write(JSON.stringify({{annotation, reply, thought, fleeting}}));
 """
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     keys = json.loads(result.stdout)
@@ -107,15 +116,37 @@ process.stdout.write(JSON.stringify({{annotation, reply, thought}}));
         "annotation": "annotation:parent-1",
         "reply": "reply:reply-1",
         "thought": "thought:thought-1",
+        "fleeting": "fleeting:trace-1",
     }
-    assert len(set(keys.values())) == 3
+    assert len(set(keys.values())) == 4
 
     watch_js = (ROOT / "xiaxia_watch_house/static/watch.js").read_text(encoding="utf-8")
     assert "window.XiaxiaTimelineEntryKey(entry)" in watch_js
-    assert "👤', label: '我的痕迹" in watch_js
-    assert "💭', label: 'Xiaxia Thought" in watch_js
-    assert "💬', label: 'Xiaxia 回复" in watch_js
+    assert "label: '我的痕迹'" in watch_js
+    assert "label: 'Xiaxia Thought'" in watch_js
+    assert "label: 'Xiaxia 回复'" in watch_js
     assert "timeline.appendChild(card)" in watch_js
+
+
+def test_v2_footprint_marker_model_and_click_seek_are_stable():
+    helper = ROOT / "xiaxia_watch_house/static/timeline_marker.js"
+    key_helper = ROOT / "xiaxia_watch_house/static/timeline_key.js"
+    script = f"""
+const markerModel = require({json.dumps(str(helper))});
+const entryKey = require({json.dumps(str(key_helper))});
+const model = markerModel({{content_type:'xiaxia_reply', reply_id:'reply-9', start_seconds:25}}, 100, entryKey);
+process.stdout.write(JSON.stringify(model));
+"""
+    result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == {
+        "entryId": "reply:reply-9",
+        "timestampSeconds": 25,
+        "positionPercent": 25,
+    }
+    watch_js = (ROOT / "xiaxia_watch_house/static/watch.js").read_text(encoding="utf-8")
+    assert "marker.dataset.timestampSeconds" in watch_js
+    assert "marker.addEventListener('click'" in watch_js
+    assert "seekTo(entry.start_seconds)" in watch_js
 
 
 def test_v11_cinema_presentation_is_incremental_and_mobile_first():
@@ -128,6 +159,7 @@ def test_v11_cinema_presentation_is_incremental_and_mobile_first():
         assert label in detail
     assert "@media (max-width: 560px)" in css
     assert ".information-grid { grid-template-columns: repeat(2" in css
+    assert ".footprint-marker" in css and "min-width: 38px" in css
 
 
 def test_private_library_and_watch_pages_render(web_client, csrf, make_film):

@@ -14,6 +14,9 @@
     if (entry.content_type === 'xiaxia_reply' && entry.reply_id) {
       return `reply:${entry.reply_id}`;
     }
+    if (entry.content_type === 'fleeting_trace' && entry.trace_id) {
+      return `fleeting:${entry.trace_id}`;
+    }
     return null;
   };
 });

@@ -4,13 +4,14 @@ import base64
 import json
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import delete, func, select
 
 from .models import (
     Film,
+    FleetingTrace,
     SubtitleCue,
     UserAnnotation,
     UserProgress,
@@ -24,6 +25,11 @@ MAX_CONTENT_LENGTH = 8000
 MAX_TRANSCRIPT_CUES = 200
 DEFAULT_TRANSCRIPT_CUES = 80
 MAX_RANGE_SECONDS = 1800.0
+FLEETING_TRACE_MAX_LENGTH = 160
+FLEETING_TRACE_RETENTION_DAYS = 30
+TOGETHER_WINDOW_SECONDS = 15.0
+NEARBY_WINDOW_SECONDS = 120.0
+SHARED_STOP_WINDOW_SECONDS = 15.0
 
 
 class ValidationError(ValueError):
@@ -174,6 +180,7 @@ def progress_dict(progress: UserProgress | None) -> dict[str, Any] | None:
         "current_seconds": progress.current_seconds,
         "duration_seconds": progress.duration_seconds,
         "playback_state": progress.playback_state,
+        "watch_intent": progress.watch_intent,
         "updated_at": iso(progress.updated_at),
     }
 
@@ -221,9 +228,12 @@ def film_dict(session, film: Film, *, include_state: bool = False) -> dict[str, 
         "updated_at": iso(film.updated_at),
     }
     if include_state:
+        user_progress = session.get(UserProgress, film.film_id)
+        xiaxia_state = session.get(XiaxiaViewingState, film.film_id)
         data["subtitle_range"] = subtitle_range(session, film.film_id)
-        data["user_progress"] = progress_dict(session.get(UserProgress, film.film_id))
-        data["xiaxia_viewing_state"] = xiaxia_progress_dict(session.get(XiaxiaViewingState, film.film_id))
+        data["user_progress"] = progress_dict(user_progress)
+        data["xiaxia_viewing_state"] = xiaxia_progress_dict(xiaxia_state)
+        data["copresence"] = derive_copresence(user_progress, xiaxia_state)
     return data
 
 
@@ -248,6 +258,7 @@ def thought_dict(item: XiaxiaThought) -> dict[str, Any]:
         "film_id": item.film_id,
         "actor": "xiaxia",
         "content_type": "xiaxia_thought",
+        "trace_type": "permanent",
         "start_seconds": item.start_seconds,
         "end_seconds": item.end_seconds,
         "cue_id": item.cue_id,
@@ -271,6 +282,111 @@ def reply_dict(item: XiaxiaReply) -> dict[str, Any]:
         "created_at": iso(item.created_at),
         "updated_at": iso(item.updated_at),
     }
+
+
+def fleeting_trace_dict(item: FleetingTrace) -> dict[str, Any]:
+    return {
+        "trace_id": item.trace_id,
+        "film_id": item.film_id,
+        "actor": item.actor,
+        "content_type": "fleeting_trace",
+        "trace_type": "fleeting",
+        "start_seconds": item.start_seconds,
+        "end_seconds": item.end_seconds,
+        "cue_id": item.cue_id,
+        "content": item.content,
+        "expires_at": iso(item.expires_at),
+        "created_at": iso(item.created_at),
+        "updated_at": iso(item.updated_at),
+    }
+
+
+def new_trace_expiry() -> datetime:
+    return utcnow() + timedelta(days=FLEETING_TRACE_RETENTION_DAYS)
+
+
+def cleanup_expired_fleeting_traces(session) -> int:
+    result = session.execute(delete(FleetingTrace).where(FleetingTrace.expires_at <= utcnow()))
+    return int(result.rowcount or 0)
+
+
+def derive_copresence(
+    user_progress: UserProgress | None, xiaxia_state: XiaxiaViewingState | None
+) -> dict[str, Any]:
+    user_seconds = float(user_progress.current_seconds if user_progress else 0.0)
+    xiaxia_seconds = float(xiaxia_state.last_timestamp_seconds if xiaxia_state else 0.0)
+    difference = round(user_seconds - xiaxia_seconds, 3)
+    distance = abs(difference)
+    if user_seconds <= 1 and xiaxia_seconds <= 1:
+        state, message = "not_started", "银幕还没有亮起来"
+    elif distance <= TOGETHER_WINDOW_SECONDS:
+        state, message = "together", "我们正在这里"
+    elif distance <= NEARBY_WINDOW_SECONDS and difference > 0:
+        state, message = "user_ahead", "🐶在前面一点"
+    elif distance <= NEARBY_WINDOW_SECONDS:
+        state, message = "xiaxia_ahead", "🐱在前面一点"
+    elif difference > 0:
+        state, message = "far_apart", "🐱正在追上来"
+    else:
+        state, message = "far_apart", "🐶正在追上来"
+    return {
+        "state": state,
+        "message": message,
+        "user_seconds": round(user_seconds, 3),
+        "xiaxia_seconds": round(xiaxia_seconds, 3),
+        "difference_seconds": difference,
+        "together_window_seconds": TOGETHER_WINDOW_SECONDS,
+    }
+
+
+def _entry_reference(entry: dict[str, Any]) -> str:
+    if entry["content_type"] == "user_annotation":
+        return f"annotation:{entry['annotation_id']}"
+    if entry["content_type"] == "xiaxia_thought":
+        return f"thought:{entry['thought_id']}"
+    if entry["content_type"] == "xiaxia_reply":
+        return f"reply:{entry['reply_id']}"
+    return f"fleeting:{entry['trace_id']}"
+
+
+def derive_shared_stops(film_id: str, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    user_entries = [item for item in entries if item.get("actor") == "user"]
+    xiaxia_entries = [item for item in entries if item.get("actor") == "xiaxia"]
+    used_xiaxia: set[str] = set()
+    stops: list[dict[str, Any]] = []
+    namespace = uuid.UUID(film_id)
+    for user_item in user_entries:
+        candidates = [
+            item for item in xiaxia_entries
+            if _entry_reference(item) not in used_xiaxia
+            and abs(float(item["start_seconds"]) - float(user_item["start_seconds"]))
+            <= SHARED_STOP_WINDOW_SECONDS
+        ]
+        if not candidates:
+            continue
+        xiaxia_item = min(
+            candidates,
+            key=lambda item: abs(float(item["start_seconds"]) - float(user_item["start_seconds"])),
+        )
+        user_ref = _entry_reference(user_item)
+        xiaxia_ref = _entry_reference(xiaxia_item)
+        used_xiaxia.add(xiaxia_ref)
+        anchor = f"shared-stop:{user_ref}:{xiaxia_ref}"
+        start = min(float(user_item["start_seconds"]), float(xiaxia_item["start_seconds"]))
+        end = max(float(user_item["start_seconds"]), float(xiaxia_item["start_seconds"]))
+        stops.append(
+            {
+                "shared_stop_id": str(uuid.uuid5(namespace, anchor)),
+                "film_id": film_id,
+                "start_seconds": round(start, 3),
+                "end_seconds": round(end, 3),
+                "anchor_seconds": round((start + end) / 2, 3),
+                "user_trace_ref": user_ref,
+                "xiaxia_trace_ref": xiaxia_ref,
+                "label": "我们都在这里停过",
+            }
+        )
+    return sorted(stops, key=lambda item: item["anchor_seconds"])
 
 
 def validate_cue_for_film(session, cue_id: str | None, film_id: str) -> str | None:

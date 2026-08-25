@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from .auth import action_token_required, json_error, reject_identity_fields
 from .models import (
     Film,
+    FleetingTrace,
     SubtitleCue,
     UserAnnotation,
     UserProgress,
@@ -20,10 +21,13 @@ from .services import (
     MAX_TRANSCRIPT_CUES,
     ValidationError,
     annotation_dict,
+    cleanup_expired_fleeting_traces,
     cue_dict,
     decode_continuation,
     encode_continuation,
     film_dict,
+    fleeting_trace_dict,
+    new_trace_expiry,
     progress_dict,
     reply_dict,
     require_text,
@@ -147,9 +151,18 @@ def get_current_context(film_id: str):
                 XiaxiaReply.start_seconds <= boundary,
             )
         ).all()
+        fleeting = g.db.scalars(
+            select(FleetingTrace).where(
+                FleetingTrace.film_id == film_id,
+                FleetingTrace.start_seconds >= evidence_start,
+                FleetingTrace.start_seconds <= boundary,
+                FleetingTrace.expires_at > utcnow(),
+            )
+        ).all()
         entries = [annotation_dict(x) for x in annotations]
         entries += [thought_dict(x) for x in thoughts]
         entries += [reply_dict(x) for x in replies]
+        entries += [fleeting_trace_dict(x) for x in fleeting]
         entries.sort(key=lambda item: (item["start_seconds"], item.get("created_at") or ""))
         return jsonify(
             {
@@ -318,6 +331,47 @@ def thoughts(film_id: str):
         touch_film(film)
         g.db.commit()
         return jsonify({"thought": thought_dict(item)}), 201
+    except ValidationError as exc:
+        g.db.rollback()
+        return json_error("validation_error", str(exc), 400)
+
+
+@action_bp.route("/videos/<film_id>/fleeting-traces", methods=["GET", "POST"])
+@action_token_required
+def fleeting_traces(film_id: str):
+    film, error = _film_or_error(film_id)
+    if error:
+        return error
+    if request.method == "GET":
+        rows = g.db.scalars(
+            select(FleetingTrace)
+            .where(FleetingTrace.film_id == film_id, FleetingTrace.expires_at > utcnow())
+            .order_by(FleetingTrace.start_seconds, FleetingTrace.created_at)
+        ).all()
+        return jsonify({"film_id": film_id, "fleeting_traces": [fleeting_trace_dict(row) for row in rows]})
+    try:
+        data = _json()
+        identity_error = reject_identity_fields(data)
+        if identity_error:
+            return identity_error
+        start = seconds(data.get("start_seconds"), "start_seconds")
+        end = seconds(data.get("end_seconds"), "end_seconds", required=False)
+        validate_range(start, end)
+        cleanup_expired_fleeting_traces(g.db)
+        item = FleetingTrace(
+            film_id=film_id,
+            actor="xiaxia",
+            content_type="fleeting_trace",
+            start_seconds=start,
+            end_seconds=end,
+            cue_id=validate_cue_for_film(g.db, data.get("cue_id"), film_id),
+            content=require_text(data.get("content"), "content", 160),
+            expires_at=new_trace_expiry(),
+        )
+        g.db.add(item)
+        touch_film(film)
+        g.db.commit()
+        return jsonify({"fleeting_trace": fleeting_trace_dict(item)}), 201
     except ValidationError as exc:
         g.db.rollback()
         return json_error("validation_error", str(exc), 400)

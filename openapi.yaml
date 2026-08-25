@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Xiaxia Watch House Action API
-  version: 1.0.0
-  description: Read bounded film context and let Xiaxia save her own progress, thoughts, and replies.
+  version: 2.0.0
+  description: Read bounded film context and let Xiaxia save progress, permanent thoughts, replies, and brief traces.
 servers:
   - url: https://YOUR-RENDER-SERVICE.onrender.com
 security:
@@ -263,6 +263,57 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/watch/videos/{film_id}/fleeting-traces:
+    get:
+      operationId: listActiveFleetingTraces
+      description: List non-expired casual traces for one film.
+      parameters:
+        - name: film_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active fleeting traces.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetingTraceListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createXiaxiaFleetingTrace
+      description: Create a short 30-day Xiaxia trace; the server fixes actor=xiaxia.
+      parameters:
+        - name: film_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFleetingTraceRequest"
+      responses:
+        "201":
+          description: Fleeting trace created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetingTraceResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/watch/xiaxia/progress:
     post:
       operationId: updateXiaxiaViewingCheckpoint
@@ -332,9 +383,11 @@ components:
         available:
           type: boolean
         start_seconds:
-          type: [number, "null"]
+          type: number
+          nullable: true
         end_seconds:
-          type: [number, "null"]
+          type: number
+          nullable: true
         cue_count:
           type: integer
       required: [available, start_seconds, end_seconds, cue_count]
@@ -350,13 +403,35 @@ components:
         current_seconds:
           type: number
         duration_seconds:
-          type: [number, "null"]
+          type: number
+          nullable: true
         playback_state:
           type: string
+        watch_intent:
+          type: string
+          nullable: true
+          enum: [rewatch]
         updated_at:
           type: string
           format: date-time
-      required: [film_id, actor, current_seconds, duration_seconds, playback_state, updated_at]
+      required: [film_id, actor, current_seconds, duration_seconds, playback_state, watch_intent, updated_at]
+    Copresence:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [not_started, together, user_ahead, xiaxia_ahead, far_apart]
+        message:
+          type: string
+        user_seconds:
+          type: number
+        xiaxia_seconds:
+          type: number
+        difference_seconds:
+          type: number
+        together_window_seconds:
+          type: number
+      required: [state, message, user_seconds, xiaxia_seconds, difference_seconds, together_window_seconds]
     XiaxiaViewingState:
       type: object
       properties:
@@ -369,10 +444,12 @@ components:
         last_timestamp_seconds:
           type: number
         last_subtitle_cue_id:
-          type: [string, "null"]
+          type: string
+          nullable: true
           format: uuid
         chunk_checkpoint:
-          type: [integer, "null"]
+          type: integer
+          nullable: true
         completed:
           type: boolean
         updated_at:
@@ -391,15 +468,19 @@ components:
           type: string
           enum: [local, youtube, bilibili, iframe, external]
         source_url:
-          type: [string, "null"]
+          type: string
+          nullable: true
         external_video_id:
-          type: [string, "null"]
+          type: string
+          nullable: true
         duration_seconds:
-          type: [number, "null"]
+          type: number
+          nullable: true
         subtitle_status:
           type: string
         subtitle_language:
-          type: [string, "null"]
+          type: string
+          nullable: true
         last_activity_at:
           type: string
           format: date-time
@@ -422,15 +503,19 @@ components:
           type: string
           enum: [local, youtube, bilibili, iframe, external]
         source_url:
-          type: [string, "null"]
+          type: string
+          nullable: true
         external_video_id:
-          type: [string, "null"]
+          type: string
+          nullable: true
         duration_seconds:
-          type: [number, "null"]
+          type: number
+          nullable: true
         subtitle_status:
           type: string
         subtitle_language:
-          type: [string, "null"]
+          type: string
+          nullable: true
         last_activity_at:
           type: string
           format: date-time
@@ -443,25 +528,30 @@ components:
         subtitle_range:
           $ref: "#/components/schemas/SubtitleRange"
         user_progress:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string, format: uuid}
             actor: {type: string, enum: [user]}
             current_seconds: {type: number}
-            duration_seconds: {type: [number, "null"]}
+            duration_seconds: {type: number, nullable: true}
             playback_state: {type: string}
+            watch_intent: {type: string, nullable: true}
             updated_at: {type: string, format: date-time}
         xiaxia_viewing_state:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string, format: uuid}
             actor: {type: string, enum: [xiaxia]}
             last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: [string, "null"], format: uuid}
-            chunk_checkpoint: {type: [integer, "null"]}
+            last_subtitle_cue_id: {type: string, format: uuid, nullable: true}
+            chunk_checkpoint: {type: integer, nullable: true}
             completed: {type: boolean}
             updated_at: {type: string, format: date-time}
-      required: [film_id, title, source_type, source_url, external_video_id, duration_seconds, subtitle_status, subtitle_language, last_activity_at, created_at, updated_at, subtitle_range, user_progress, xiaxia_viewing_state]
+        copresence:
+          $ref: "#/components/schemas/Copresence"
+      required: [film_id, title, source_type, source_url, external_video_id, duration_seconds, subtitle_status, subtitle_language, last_activity_at, created_at, updated_at, subtitle_range, user_progress, xiaxia_viewing_state, copresence]
     SubtitleCue:
       type: object
       properties:
@@ -487,8 +577,8 @@ components:
         actor: {type: string, enum: [user]}
         content_type: {type: string, enum: [user_annotation]}
         start_seconds: {type: number}
-        end_seconds: {type: [number, "null"]}
-        cue_id: {type: [string, "null"], format: uuid}
+        end_seconds: {type: number, nullable: true}
+        cue_id: {type: string, format: uuid, nullable: true}
         content: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
@@ -500,13 +590,14 @@ components:
         film_id: {type: string, format: uuid}
         actor: {type: string, enum: [xiaxia]}
         content_type: {type: string, enum: [xiaxia_thought]}
+        trace_type: {type: string, enum: [permanent]}
         start_seconds: {type: number}
-        end_seconds: {type: [number, "null"]}
-        cue_id: {type: [string, "null"], format: uuid}
+        end_seconds: {type: number, nullable: true}
+        cue_id: {type: string, format: uuid, nullable: true}
         content: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
-      required: [thought_id, film_id, actor, content_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
+      required: [thought_id, film_id, actor, content_type, trace_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
     XiaxiaReply:
       type: object
       properties:
@@ -516,12 +607,28 @@ components:
         actor: {type: string, enum: [xiaxia]}
         content_type: {type: string, enum: [xiaxia_reply]}
         start_seconds: {type: number}
-        end_seconds: {type: [number, "null"]}
-        cue_id: {type: [string, "null"], format: uuid}
+        end_seconds: {type: number, nullable: true}
+        cue_id: {type: string, format: uuid, nullable: true}
         content: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
       required: [reply_id, annotation_id, film_id, actor, content_type, start_seconds, end_seconds, cue_id, content, created_at, updated_at]
+    FleetingTrace:
+      type: object
+      properties:
+        trace_id: {type: string, format: uuid}
+        film_id: {type: string, format: uuid}
+        actor: {type: string, enum: [user, xiaxia]}
+        content_type: {type: string, enum: [fleeting_trace]}
+        trace_type: {type: string, enum: [fleeting]}
+        start_seconds: {type: number}
+        end_seconds: {type: number, nullable: true}
+        cue_id: {type: string, format: uuid, nullable: true}
+        content: {type: string, maxLength: 160}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+      required: [trace_id, film_id, actor, content_type, trace_type, start_seconds, end_seconds, cue_id, content, expires_at, created_at, updated_at]
     FilmListResponse:
       type: object
       properties:
@@ -542,57 +649,66 @@ components:
       type: object
       properties:
         current_film:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string, format: uuid}
             title: {type: string}
             source_type: {type: string}
-            source_url: {type: [string, "null"]}
-            external_video_id: {type: [string, "null"]}
-            duration_seconds: {type: [number, "null"]}
+            source_url: {type: string, nullable: true}
+            external_video_id: {type: string, nullable: true}
+            duration_seconds: {type: number, nullable: true}
             subtitle_status: {type: string}
-            subtitle_language: {type: [string, "null"]}
+            subtitle_language: {type: string, nullable: true}
             last_activity_at: {type: string, format: date-time}
             created_at: {type: string, format: date-time}
             updated_at: {type: string, format: date-time}
             subtitle_range:
               $ref: "#/components/schemas/SubtitleRange"
             user_progress:
-              type: [object, "null"]
+              type: object
+              nullable: true
               properties:
                 film_id: {type: string, format: uuid}
                 actor: {type: string}
                 current_seconds: {type: number}
-                duration_seconds: {type: [number, "null"]}
+                duration_seconds: {type: number, nullable: true}
                 playback_state: {type: string}
+                watch_intent: {type: string, nullable: true}
                 updated_at: {type: string}
             xiaxia_viewing_state:
-              type: [object, "null"]
+              type: object
+              nullable: true
               properties:
                 film_id: {type: string, format: uuid}
                 actor: {type: string}
                 last_timestamp_seconds: {type: number}
-                last_subtitle_cue_id: {type: [string, "null"]}
-                chunk_checkpoint: {type: [integer, "null"]}
+                last_subtitle_cue_id: {type: string, nullable: true}
+                chunk_checkpoint: {type: integer, nullable: true}
                 completed: {type: boolean}
                 updated_at: {type: string}
+            copresence:
+              $ref: "#/components/schemas/Copresence"
         user_progress:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string, format: uuid}
             actor: {type: string}
             current_seconds: {type: number}
-            duration_seconds: {type: [number, "null"]}
+            duration_seconds: {type: number, nullable: true}
             playback_state: {type: string}
+            watch_intent: {type: string, nullable: true}
             updated_at: {type: string}
         xiaxia_viewing_state:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string, format: uuid}
             actor: {type: string}
             last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: [string, "null"]}
-            chunk_checkpoint: {type: [integer, "null"]}
+            last_subtitle_cue_id: {type: string, nullable: true}
+            chunk_checkpoint: {type: integer, nullable: true}
             completed: {type: boolean}
             updated_at: {type: string}
       required: [current_film, user_progress, xiaxia_viewing_state]
@@ -617,33 +733,38 @@ components:
               annotation_id: {type: string, format: uuid}
               thought_id: {type: string, format: uuid}
               reply_id: {type: string, format: uuid}
-              annotation_id_for_reply: {type: string, format: uuid}
+              trace_id: {type: string, format: uuid}
               film_id: {type: string, format: uuid}
               actor: {type: string}
               content_type: {type: string}
+              trace_type: {type: string}
               start_seconds: {type: number}
-              end_seconds: {type: [number, "null"]}
-              cue_id: {type: [string, "null"], format: uuid}
+              end_seconds: {type: number, nullable: true}
+              cue_id: {type: string, format: uuid, nullable: true}
               content: {type: string}
+              expires_at: {type: string, format: date-time}
               created_at: {type: string, format: date-time}
               updated_at: {type: string, format: date-time}
         user_progress:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string}
             actor: {type: string}
             current_seconds: {type: number}
-            duration_seconds: {type: [number, "null"]}
+            duration_seconds: {type: number, nullable: true}
             playback_state: {type: string}
+            watch_intent: {type: string, nullable: true}
             updated_at: {type: string}
         xiaxia_viewing_state:
-          type: [object, "null"]
+          type: object
+          nullable: true
           properties:
             film_id: {type: string}
             actor: {type: string}
             last_timestamp_seconds: {type: number}
-            last_subtitle_cue_id: {type: [string, "null"]}
-            chunk_checkpoint: {type: [integer, "null"]}
+            last_subtitle_cue_id: {type: string, nullable: true}
+            chunk_checkpoint: {type: integer, nullable: true}
             completed: {type: boolean}
             updated_at: {type: string}
       required: [film, requested_timestamp_seconds, evidence_start_seconds, evidence_end_seconds, spoiler_boundary_seconds, subtitle_cues, timeline_entries, user_progress, xiaxia_viewing_state]
@@ -651,8 +772,8 @@ components:
       type: object
       properties:
         film_id: {type: string, format: uuid}
-        available_start_seconds: {type: [number, "null"]}
-        available_end_seconds: {type: [number, "null"]}
+        available_start_seconds: {type: number, nullable: true}
+        available_end_seconds: {type: number, nullable: true}
         range_start_seconds: {type: number}
         range_end_seconds: {type: number}
         cue_count: {type: integer}
@@ -701,6 +822,30 @@ components:
         thought:
           $ref: "#/components/schemas/XiaxiaThought"
       required: [thought]
+    FleetingTraceListResponse:
+      type: object
+      properties:
+        film_id: {type: string, format: uuid}
+        fleeting_traces:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetingTrace"
+      required: [film_id, fleeting_traces]
+    CreateFleetingTraceRequest:
+      type: object
+      properties:
+        start_seconds: {type: number, minimum: 0}
+        end_seconds: {type: number, minimum: 0}
+        cue_id: {type: string, format: uuid}
+        content: {type: string, minLength: 1, maxLength: 160}
+      required: [start_seconds, content]
+      additionalProperties: false
+    FleetingTraceResponse:
+      type: object
+      properties:
+        fleeting_trace:
+          $ref: "#/components/schemas/FleetingTrace"
+      required: [fleeting_trace]
     CreateReplyRequest:
       type: object
       properties:

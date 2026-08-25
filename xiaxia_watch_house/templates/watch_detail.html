@@ -12,6 +12,7 @@
 {% set xiaxia_seconds = film.xiaxia_viewing_state.last_timestamp_seconds if film.xiaxia_viewing_state else 0 %}
 {% set user_completed = film.user_progress and (film.user_progress.playback_state == 'ended' or (film.duration_seconds and user_seconds / film.duration_seconds >= 0.95)) %}
 {% set xiaxia_completed = film.xiaxia_viewing_state and film.xiaxia_viewing_state.completed %}
+{% set rewatch = film.user_progress and film.user_progress.watch_intent == 'rewatch' %}
 <section class="film-information card" aria-label="影片信息">
   <div class="information-title"><span aria-hidden="true">🎬</span><div><p class="eyebrow">FILM MEMORY</p><h2>影片信息</h2></div></div>
   <dl class="information-grid">
@@ -21,18 +22,23 @@
     <div><dt>总时长</dt><dd id="film-duration-info" class="js-format-seconds" data-seconds="{{ film.duration_seconds or 0 }}" data-empty-label="待播放器读取">{{ '待播放器读取' if not film.duration_seconds else film.duration_seconds }}</dd></div>
     <div>
       <dt>我的进度</dt>
-      <dd><span id="user-progress-info" class="js-format-seconds" data-seconds="{{ user_seconds }}">{{ user_seconds }}</span><span id="user-status-info" class="watch-status {{ 'completed' if user_completed else ('watching' if user_seconds > 1 else 'not-started') }}">{{ '已完成' if user_completed else ('观看中' if user_seconds > 1 else '未开始') }}</span></dd>
+      <dd><span id="user-progress-info" class="js-format-seconds" data-seconds="{{ user_seconds }}">{{ user_seconds }}</span><span id="user-status-info" class="watch-status {{ 'rewatch' if rewatch else ('completed' if user_completed else ('watching' if user_seconds > 1 else 'not-started')) }}">{{ '想重看' if rewatch else ('已完成' if user_completed else ('观看中' if user_seconds > 1 else '未开始')) }}</span></dd>
     </div>
     <div>
       <dt>Xiaxia 进度</dt>
-      <dd><span class="js-format-seconds" data-seconds="{{ xiaxia_seconds }}">{{ xiaxia_seconds }}</span><span class="watch-status {{ 'completed' if xiaxia_completed else ('watching' if xiaxia_seconds > 1 else 'not-started') }}">{{ '已完成' if xiaxia_completed else ('观看中' if xiaxia_seconds > 1 else '未开始') }}</span></dd>
+      <dd><span id="xiaxia-progress-info" class="js-format-seconds" data-seconds="{{ xiaxia_seconds }}">{{ xiaxia_seconds }}</span><span class="watch-status {{ 'completed' if xiaxia_completed else ('watching' if xiaxia_seconds > 1 else 'not-started') }}">{{ '已完成' if xiaxia_completed else ('观看中' if xiaxia_seconds > 1 else '未开始') }}</span></dd>
     </div>
   </dl>
+  <div id="copresence-lamp" class="copresence-lamp {{ film.copresence.state }}" aria-live="polite">
+    <span class="seat-times">🐶 <strong id="seat-user-time" class="js-format-seconds" data-seconds="{{ film.copresence.user_seconds }}">0</strong><i>·</i>🐱 <strong id="seat-xiaxia-time" class="js-format-seconds" data-seconds="{{ film.copresence.xiaxia_seconds }}">0</strong></span>
+    <span id="copresence-message">{{ film.copresence.message }}</span>
+  </div>
 </section>
 
 <div class="watch-layout">
   <section class="screen-column">
     <div class="screen card">
+      <p id="pause-atmosphere" class="pause-atmosphere hidden">我们停在这里。</p>
       <div id="local-source" class="source-panel {{ '' if film.source_type == 'local' else 'hidden' }}">
         <label class="file-picker">选择本地视频<input id="local-video-file" type="file" accept="video/*"></label>
         <p>视频只在当前浏览器中播放，不会上传到 Render 或 PostgreSQL。</p>
@@ -78,15 +84,26 @@
       <p class="eyebrow">LEAVE A TRACE</p><h2>在这一秒留句话</h2>
       <form id="annotation-form">
         <div class="anchor-preview"><span id="annotation-time">00:00</span><span id="annotation-cue">未绑定 cue</span></div>
+        <label>留下的重量
+          <select id="trace-kind" name="trace_kind">
+            <option value="permanent">永久痕迹</option>
+            <option value="fleeting">随口说 · 30 天</option>
+          </select>
+        </label>
         <textarea id="annotation-content" name="content" maxlength="8000" rows="4" placeholder="写下你此刻想到的……" required></textarea>
-        <button type="submit">留在时间线上</button>
+        <button id="trace-submit" type="submit">留在时间线上</button>
       </form>
     </section>
     <section class="timeline-section">
-      <div class="section-heading"><div><p class="eyebrow">SHARED TIMELINE</p><h2>我们留下的电影记忆</h2></div><span id="poll-status" class="muted">12 秒同步</span></div>
-      <div id="timeline" class="timeline" aria-live="polite"></div>
+      <div class="section-heading"><div><p class="eyebrow">LITTLE FOOTPRINTS</p><h2>我们经过这里</h2></div><span id="poll-status" class="muted">12 秒同步</span></div>
+      <div id="fleeting-layer" class="fleeting-layer" aria-live="polite"></div>
+      <div id="timeline-footprints" class="timeline-footprints" aria-label="时间线脚印"></div>
+      <p id="empty-timeline" class="muted">还没有人留下观影痕迹。</p>
+      <div id="timeline" class="timeline-detail" aria-live="polite"></div>
+      <div id="shared-stops" class="shared-stops" aria-label="共同停留"></div>
     </section>
+    <button id="mark-rewatch" class="ghost rewatch-button" type="button">把它放回“想重看”</button>
   </aside>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='timeline_key.js') }}" defer></script><script src="{{ url_for('static', filename='watch.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='timeline_key.js') }}" defer></script><script src="{{ url_for('static', filename='timeline_marker.js') }}" defer></script><script src="{{ url_for('static', filename='watch.js') }}" defer></script>{% endblock %}

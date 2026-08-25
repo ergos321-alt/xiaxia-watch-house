@@ -54,8 +54,9 @@
 {% set shelves = namespace(watching=[], want=[], completed=[]) %}
 {% for film in films %}
   {% set user_seconds = film.user_progress.current_seconds if film.user_progress else 0 %}
+  {% set wants_rewatch = film.user_progress and film.user_progress.watch_intent == 'rewatch' %}
   {% set film_duration = film.duration_seconds or (film.user_progress.duration_seconds if film.user_progress else 0) %}
-  {% set is_completed = film.user_progress and (film.user_progress.playback_state == 'ended' or (film_duration and user_seconds / film_duration >= 0.95)) %}
+  {% set is_completed = (not wants_rewatch) and film.user_progress and (film.user_progress.playback_state == 'ended' or (film_duration and user_seconds / film_duration >= 0.95)) %}
   {% if is_completed %}
     {% set shelves.completed = shelves.completed + [film] %}
   {% elif user_seconds > 1 %}
@@ -75,7 +76,7 @@
 {% if shelves.want %}
 <section class="cinema-shelf" aria-labelledby="want-title">
   <div class="shelf-heading"><div><p class="eyebrow">TO WATCH</p><h2 id="want-title">想看的影片</h2></div><p>等一个适合一起按下播放键的晚上。</p></div>
-  <div class="film-grid">{% for film in shelves.want %}{{ film_card(film, '未开始', 'not-started', source_labels) }}{% endfor %}</div>
+  <div class="film-grid">{% for film in shelves.want %}{{ film_card(film, '想重看' if film.user_progress and film.user_progress.watch_intent == 'rewatch' else '未开始', 'rewatch' if film.user_progress and film.user_progress.watch_intent == 'rewatch' else 'not-started', source_labels) }}{% endfor %}</div>
 </section>
 {% endif %}
 

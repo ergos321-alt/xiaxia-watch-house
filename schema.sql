@@ -1,4 +1,4 @@
--- Xiaxia Watch House V1 fresh-install schema for Supabase PostgreSQL.
+-- Xiaxia Watch House V2 fresh-install schema for Supabase PostgreSQL.
 -- Run once in a new project's SQL Editor. All timeline units are seconds.
 
 create extension if not exists pgcrypto;
@@ -48,6 +48,7 @@ create table user_progress (
   duration_seconds double precision check (duration_seconds is null or duration_seconds >= 0),
   playback_state varchar(20) not null default 'idle'
     check (playback_state in ('playing','paused','seeking','ended','idle')),
+  watch_intent varchar(20) check (watch_intent is null or watch_intent = 'rewatch'),
   updated_at timestamptz not null default now()
 );
 
@@ -108,6 +109,23 @@ create table xiaxia_replies (
 create index ix_replies_film_time on xiaxia_replies (film_id, start_seconds);
 create index ix_replies_annotation on xiaxia_replies (annotation_id);
 
+create table fleeting_traces (
+  trace_id uuid primary key default gen_random_uuid(),
+  film_id uuid not null references films(film_id) on delete cascade,
+  actor varchar(20) not null check (actor in ('user','xiaxia')),
+  content_type varchar(30) not null default 'fleeting_trace' check (content_type = 'fleeting_trace'),
+  start_seconds double precision not null check (start_seconds >= 0),
+  end_seconds double precision check (end_seconds is null or end_seconds >= start_seconds),
+  cue_id uuid references subtitle_cues(cue_id) on delete set null,
+  content text not null check (length(btrim(content)) > 0 and length(content) <= 160),
+  expires_at timestamptz not null default (now() + interval '30 days'),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index ix_fleeting_traces_film_time on fleeting_traces (film_id, start_seconds);
+create index ix_fleeting_traces_expiry on fleeting_traces (expires_at);
+
 create table watch_state (
   singleton_id integer primary key default 1 check (singleton_id = 1),
   current_film_id uuid references films(film_id) on delete set null,
@@ -126,6 +144,8 @@ create trigger xiaxia_thoughts_set_updated_at before update on xiaxia_thoughts
 for each row execute function set_updated_at();
 create trigger xiaxia_replies_set_updated_at before update on xiaxia_replies
 for each row execute function set_updated_at();
+create trigger fleeting_traces_set_updated_at before update on fleeting_traces
+for each row execute function set_updated_at();
 create trigger user_progress_set_updated_at before update on user_progress
 for each row execute function set_updated_at();
 create trigger xiaxia_viewing_state_set_updated_at before update on xiaxia_viewing_state
@@ -133,5 +153,5 @@ for each row execute function set_updated_at();
 create trigger watch_state_set_updated_at before update on watch_state
 for each row execute function set_updated_at();
 
--- Storage is intentionally not required in V1. Local video stays in the browser;
+-- Storage is intentionally not required in V2. Local video stays in the browser;
 -- PostgreSQL stores only metadata, subtitle text, progress, and timeline traces.

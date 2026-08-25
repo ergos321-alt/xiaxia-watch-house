@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 
 from xiaxia_watch_house.models import (
     Film,
+    FleetingTrace,
     SubtitleCue,
     UserAnnotation,
     UserProgress,
@@ -173,6 +174,10 @@ def test_film_deletion_cascades_all_owned_rows(
         json={"start_seconds": 1, "content": "thought"}, headers=action_headers
     )
     client.post(
+        f"/api/watch/videos/{film['film_id']}/fleeting-traces",
+        json={"start_seconds": 2, "content": "brief"}, headers=action_headers
+    )
+    client.post(
         f"/api/watch/annotations/{annotation['annotation_id']}/reply",
         json={"content": "reply"}, headers=action_headers
     )
@@ -192,7 +197,7 @@ def test_film_deletion_cascades_all_owned_rows(
     assert response.status_code == 200
     db = app.extensions["db_session_factory"]()
     try:
-        for model in [Film, SubtitleCue, UserAnnotation, XiaxiaThought, XiaxiaReply, UserProgress, XiaxiaViewingState]:
+        for model in [Film, SubtitleCue, UserAnnotation, XiaxiaThought, XiaxiaReply, FleetingTrace, UserProgress, XiaxiaViewingState]:
             assert db.scalar(select(func.count()).select_from(model)) == 0
         state = db.get(WatchState, 1)
         assert state is not None and state.current_film_id is None

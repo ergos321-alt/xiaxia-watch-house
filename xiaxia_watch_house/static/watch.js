@@ -14,6 +14,10 @@
   const userProgressInfo = document.getElementById('user-progress-info');
   const userStatusInfo = document.getElementById('user-status-info');
   const timeline = document.getElementById('timeline');
+  const footprints = document.getElementById('timeline-footprints');
+  const sharedStops = document.getElementById('shared-stops');
+  const fleetingLayer = document.getElementById('fleeting-layer');
+  const pauseAtmosphere = document.getElementById('pause-atmosphere');
   const toast = document.getElementById('toast');
   let virtualSeconds = film.user_progress?.current_seconds || 0;
   let durationSeconds = film.duration_seconds || film.user_progress?.duration_seconds || null;
@@ -23,6 +27,10 @@
   let currentCue = null;
   let timelineCursor = null;
   const rendered = new Set();
+  const renderedStops = new Set();
+  const entriesById = new Map();
+  let xiaxiaSeconds = film.xiaxia_viewing_state?.last_timestamp_seconds || 0;
+  let pausedSince = Date.now();
   let objectUrl = null;
 
   const showToast = (message) => {
@@ -47,6 +55,27 @@
   const activeState = () => player && !player.classList.contains('hidden')
     ? (player.ended ? 'ended' : (player.paused ? 'paused' : 'playing'))
     : (virtualPlaying ? 'playing' : 'paused');
+
+  const updateCopresence = (userSeconds, catSeconds) => {
+    const difference = userSeconds - catSeconds;
+    const distance = Math.abs(difference);
+    let state = 'not_started';
+    let message = '银幕还没有亮起来';
+    if (userSeconds > 1 || catSeconds > 1) {
+      if (distance <= 15) [state, message] = ['together', '我们正在这里'];
+      else if (distance <= 120 && difference > 0) [state, message] = ['user_ahead', '🐶在前面一点'];
+      else if (distance <= 120) [state, message] = ['xiaxia_ahead', '🐱在前面一点'];
+      else if (difference > 0) [state, message] = ['far_apart', '🐱正在追上来'];
+      else [state, message] = ['far_apart', '🐶正在追上来'];
+    }
+    const lamp = document.getElementById('copresence-lamp');
+    if (lamp) lamp.className = `copresence-lamp ${state}`;
+    document.getElementById('copresence-message').textContent = message;
+    document.getElementById('seat-user-time').textContent = formatTime(userSeconds);
+    document.getElementById('seat-xiaxia-time').textContent = formatTime(catSeconds);
+    const xiaxiaInfo = document.getElementById('xiaxia-progress-info');
+    if (xiaxiaInfo) xiaxiaInfo.textContent = formatTime(catSeconds);
+  };
 
   const api = async (url, options = {}) => {
     const headers = {...(options.headers || {})};
@@ -96,9 +125,18 @@
     if (durationInfo) durationInfo.textContent = durationSeconds ? formatTime(durationSeconds) : durationInfo.dataset.emptyLabel;
     if (userProgressInfo) userProgressInfo.textContent = formatTime(value);
     if (userStatusInfo) {
-      const completed = activeState() === 'ended' || (durationSeconds && value / durationSeconds >= 0.95);
-      userStatusInfo.textContent = completed ? '已完成' : (value > 1 ? '观看中' : '未开始');
-      userStatusInfo.className = `watch-status ${completed ? 'completed' : (value > 1 ? 'watching' : 'not-started')}`;
+      const rewatch = film.user_progress?.watch_intent === 'rewatch' && value <= 1;
+      const completed = !rewatch && (activeState() === 'ended' || (durationSeconds && value / durationSeconds >= 0.95));
+      userStatusInfo.textContent = rewatch ? '想重看' : (completed ? '已完成' : (value > 1 ? '观看中' : '未开始'));
+      userStatusInfo.className = `watch-status ${rewatch ? 'rewatch' : (completed ? 'completed' : (value > 1 ? 'watching' : 'not-started'))}`;
+    }
+    updateCopresence(value, xiaxiaSeconds);
+    if (activeState() === 'playing') {
+      pausedSince = null;
+      pauseAtmosphere?.classList.add('hidden');
+    } else {
+      if (pausedSince === null) pausedSince = Date.now();
+      if (Date.now() - pausedSince >= 8000) pauseAtmosphere?.classList.remove('hidden');
     }
     if (currentCue && value >= currentCue.start_seconds && value <= currentCue.end_seconds) {
       annotationCue.textContent = `cue ${currentCue.sequence_number}`;
@@ -145,6 +183,7 @@
     player.addEventListener('loadedmetadata', () => {
       durationSeconds = Number.isFinite(player.duration) ? player.duration : durationSeconds;
       if (virtualSeconds < durationSeconds) player.currentTime = virtualSeconds;
+      layoutFootprints();
       saveProgress(true, 'paused');
     }, {once: true});
   });
@@ -204,29 +243,36 @@
     document.getElementById('embed-wrap').textContent = '此来源未进行 iframe 嵌入，请在原平台播放并使用静音同步。';
   }
 
-  const renderEntry = (entry) => {
-    const id = window.XiaxiaTimelineEntryKey(entry);
-    if (!id || rendered.has(id)) return;
-    rendered.add(id);
+  const presentationFor = (entry) => {
+    if (entry.content_type === 'fleeting_trace') {
+      return entry.actor === 'user'
+        ? {icon: '🐶', marker: '·', label: '我的随口说'}
+        : {icon: '🐱', marker: '·', label: 'Xiaxia 的随口说'};
+    }
+    return {
+      user_annotation: {icon: '👤', marker: '●', label: '我的痕迹'},
+      xiaxia_thought: {icon: '💭', marker: '◆', label: 'Xiaxia Thought'},
+      xiaxia_reply: {icon: '💬', marker: '○', label: 'Xiaxia 回复'},
+    }[entry.content_type] || {icon: '·', marker: '·', label: entry.content_type};
+  };
+
+  const showEntry = (entry) => {
+    timeline.replaceChildren();
     const card = document.createElement('article');
     card.className = `trace ${entry.content_type}`;
-    card.dataset.entryId = id;
+    card.dataset.entryId = window.XiaxiaTimelineEntryKey(entry);
     card.dataset.contentType = entry.content_type;
     const top = document.createElement('div');
     top.className = 'trace-top';
     const label = document.createElement('span');
     label.className = 'trace-actor';
-    const presentation = {
-      user_annotation: {icon: '👤', label: '我的痕迹'},
-      xiaxia_thought: {icon: '💭', label: 'Xiaxia Thought'},
-      xiaxia_reply: {icon: '💬', label: 'Xiaxia 回复'},
-    }[entry.content_type];
+    const presentation = presentationFor(entry);
     const icon = document.createElement('span');
     icon.className = 'trace-icon';
     icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = presentation?.icon || '•';
+    icon.textContent = presentation.icon;
     const labelText = document.createElement('span');
-    labelText.textContent = presentation?.label || entry.content_type;
+    labelText.textContent = presentation.label;
     label.append(icon, labelText);
     const time = document.createElement('button');
     time.type = 'button';
@@ -244,24 +290,92 @@
       parent.dataset.parentAnnotationId = entry.annotation_id;
       card.appendChild(parent);
     }
+    if (entry.content_type === 'fleeting_trace') {
+      const expiry = document.createElement('small');
+      expiry.className = 'fleeting-expiry';
+      expiry.textContent = '轻痕迹 · 30 天后自动过期';
+      card.appendChild(expiry);
+    }
     timeline.appendChild(card);
   };
+
+  const showFleeting = (entry) => {
+    while (fleetingLayer.children.length >= 3) fleetingLayer.firstElementChild.remove();
+    const bubble = document.createElement('button');
+    bubble.type = 'button';
+    bubble.className = `fleeting-bubble ${entry.actor}`;
+    bubble.textContent = `${entry.actor === 'user' ? '🐶' : '🐱'} ${entry.content}`;
+    bubble.addEventListener('click', () => { seekTo(entry.start_seconds); showEntry(entry); });
+    fleetingLayer.appendChild(bubble);
+    setTimeout(() => bubble.classList.add('leaving'), 6000);
+    setTimeout(() => bubble.remove(), 8000);
+  };
+
+  const renderEntry = (entry, initial = false) => {
+    const model = window.XiaxiaTimelineMarkerModel(entry, durationSeconds, window.XiaxiaTimelineEntryKey);
+    const id = model.entryId;
+    if (!id || rendered.has(id)) return;
+    rendered.add(id);
+    entriesById.set(id, entry);
+    const marker = document.createElement('button');
+    const presentation = presentationFor(entry);
+    marker.type = 'button';
+    marker.className = `footprint-marker ${entry.content_type} ${entry.actor}`;
+    marker.dataset.entryId = id;
+    marker.dataset.timestampSeconds = String(model.timestampSeconds);
+    marker.style.left = `${model.positionPercent ?? 0}%`;
+    marker.setAttribute('aria-label', `${presentation.label} ${formatTime(entry.start_seconds)}`);
+    marker.textContent = presentation.marker;
+    marker.addEventListener('click', () => {
+      seekTo(entry.start_seconds);
+      showEntry(entry);
+    });
+    footprints.appendChild(marker);
+    document.getElementById('empty-timeline')?.classList.add('hidden');
+    if (!initial && entry.content_type === 'fleeting_trace') showFleeting(entry);
+  };
+
+  const layoutFootprints = () => {
+    const markers = [...footprints.querySelectorAll('.footprint-marker')];
+    markers.sort((a, b) => Number(a.dataset.timestampSeconds) - Number(b.dataset.timestampSeconds));
+    let previousTimestamp = -999;
+    let lane = 0;
+    markers.forEach((marker, index) => {
+      const value = Number(marker.dataset.timestampSeconds);
+      lane = Math.abs(value - previousTimestamp) <= 1 ? (lane + 1) % 3 : 0;
+      previousTimestamp = value;
+      marker.style.left = `${durationSeconds
+        ? Math.min(100, Math.max(0, value / durationSeconds * 100))
+        : ((index + 1) / (markers.length + 1)) * 100}%`;
+      marker.style.top = `${-17 + lane * 30}px`;
+    });
+  };
+
+  const renderSharedStops = (stops) => {
+    stops.forEach((stop) => {
+      if (renderedStops.has(stop.shared_stop_id)) return;
+      renderedStops.add(stop.shared_stop_id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'shared-stop';
+      button.dataset.sharedStopId = stop.shared_stop_id;
+      button.textContent = `⌁ ${formatTime(stop.anchor_seconds)} · ${stop.label}`;
+      button.addEventListener('click', () => seekTo(stop.anchor_seconds));
+      sharedStops.appendChild(button);
+    });
+  };
+
   const pollTimeline = async (initial = false) => {
     try {
       const query = timelineCursor ? `?since=${encodeURIComponent(timelineCursor)}` : '';
       const data = await api(`/api/web/films/${film.film_id}/timeline${query}`);
-      data.entries.forEach(renderEntry);
+      data.entries.forEach((entry) => renderEntry(entry, initial));
+      layoutFootprints();
+      renderSharedStops(data.shared_stops || []);
+      if (data.copresence) xiaxiaSeconds = data.copresence.xiaxia_seconds;
       timelineCursor = data.cursor;
       document.getElementById('poll-status').textContent = initial ? '已载入' : '刚刚同步';
-      if (!timeline.children.length) {
-        const empty = document.createElement('p');
-        empty.id = 'empty-timeline';
-        empty.className = 'muted';
-        empty.textContent = '还没有人留下观影痕迹。';
-        timeline.appendChild(empty);
-      } else {
-        document.getElementById('empty-timeline')?.remove();
-      }
+      document.getElementById('empty-timeline')?.classList.toggle('hidden', rendered.size > 0);
     } catch (error) {
       document.getElementById('poll-status').textContent = '同步暂缓';
     }
@@ -269,13 +383,24 @@
   pollTimeline(true);
   setInterval(() => pollTimeline(false), 12000);
 
+  document.getElementById('trace-kind')?.addEventListener('change', (event) => {
+    const fleeting = event.target.value === 'fleeting';
+    const textarea = document.getElementById('annotation-content');
+    textarea.maxLength = fleeting ? 160 : 8000;
+    textarea.rows = fleeting ? 2 : 4;
+    textarea.placeholder = fleeting ? '一句随口的反应……' : '写下你此刻想到的……';
+    document.getElementById('trace-submit').textContent = fleeting ? '轻轻说一句' : '留在时间线上';
+  });
+
   document.getElementById('annotation-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const textarea = document.getElementById('annotation-content');
     const content = textarea.value.trim();
     if (!content) return;
     try {
-      const data = await api(`/api/web/films/${film.film_id}/annotations`, {
+      const traceKind = document.getElementById('trace-kind').value;
+      const endpoint = traceKind === 'fleeting' ? 'fleeting-traces' : 'annotations';
+      const data = await api(`/api/web/films/${film.film_id}/${endpoint}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -284,10 +409,11 @@
           content,
         }),
       });
-      document.getElementById('empty-timeline')?.remove();
-      renderEntry(data.annotation);
+      const entry = traceKind === 'fleeting' ? data.fleeting_trace : data.annotation;
+      renderEntry(entry, false);
+      showEntry(entry);
       textarea.value = '';
-      showToast('已经留在这一秒。');
+      showToast(traceKind === 'fleeting' ? '这句轻轻留在这一场。' : '已经留在这一秒。');
     } catch (error) { showToast(error.message); }
   });
 
@@ -315,6 +441,20 @@
         method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirm_title: confirmed}),
       });
       window.location.assign('/watch');
+    } catch (error) { showToast(error.message); }
+  });
+
+  document.getElementById('mark-rewatch')?.addEventListener('click', async () => {
+    if (!window.confirm('把这部影片放回“想重看”，并把我的播放位置归零吗？')) return;
+    try {
+      const data = await api(`/api/web/films/${film.film_id}/watch-intent`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({watch_intent: 'rewatch'}),
+      });
+      film.user_progress = data.user_progress;
+      virtualSeconds = 0;
+      if (!player.classList.contains('hidden')) player.currentTime = 0;
+      showToast('已经放回“想重看”。');
     } catch (error) { showToast(error.message); }
   });
 

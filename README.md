@@ -7,6 +7,8 @@
 
 服务端不会直接控制手机，也不会周期截图。Tasker 仍是设备执行端；Eye 的 Vision Worker 只负责 `pixels → structured visual facts`，不扮演 Xiaxia。
 
+当前 ChatGPT 入口为普通 ChatGPT → Xiaxia Plugin → MCP → 本服务。下方 Custom GPT Action Schema 说明是历史兼容文档，不代表当前入口。
+
 ## Runtime and environment
 
 - Python 3.11+
@@ -23,7 +25,7 @@
 Eye Vision Worker 新增配置：
 
 - `VISION_PROVIDER=openai`：启用内置 OpenAI Responses adapter。
-- `OPENAI_API_KEY`：只配置在服务端环境变量，不发给 Tasker 或 Custom GPT。
+- `OPENAI_API_KEY`：只配置在服务端环境变量，不发给 Tasker 或 ChatGPT 客户端。
 - `VISION_MODEL`：由部署者明确选择支持图片理解和结构化输出的模型；业务代码不写死模型。
 - `VISION_API_BASE`：可选，默认 `https://api.openai.com/v1`，为未来 adapter/provider 替换预留。
 - `VISION_TIMEOUT_SECONDS`：可选，默认 60，限制为 10–120 秒。
@@ -260,7 +262,7 @@ pending → capturing → uploaded → analyzing → completed
 
 推荐轮询：把 Eye poll 加入现有 Tasker 定时流程，但 Eye 没有 pending request 时绝不触发截图。后台轮询频率需结合 Android 电池限制实测。本项目不生成复杂 Tasker XML。
 
-## Custom GPT Action schema
+## Historical Custom GPT Action schema
 
 `openapi.yaml` 保留原 Reality、Phone、Spatial、Personal Places、Route、Hand Actions，并只新增两个 GPT 可见 Eye operation：
 
